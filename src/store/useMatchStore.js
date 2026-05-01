@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import { isLegalDelivery } from '../utils/calculations'
 
 const defaultBatsmanStat = () => ({ runs: 0, balls: 0, fours: 0, sixes: 0, out: false, dismissal: '', fielder: '' })
@@ -397,7 +397,10 @@ const useMatchStore = create(
         set({ ...initialState, matchHistory })
       },
     }),
-    { name: 'crichub-match-v2' }
+    { 
+      name: 'crichub-match-v2',
+      storage: createJSONStorage(() => sessionStorage)
+    }
   )
 )
 
