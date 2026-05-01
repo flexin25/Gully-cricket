@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@theme {
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 14px;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1F2937; border-radius: 2px; }
+
+/* btn base */
+.btn-t {
+  touch-action: manipulation;
+  user-select: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
+}
+.btn-t:active { transform: scale(0.97); }
+.btn-t:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* scorecard panel – subtle dashboard card */
+.sc-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+/* table consistent */
+.sc-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.sc-table th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding-bottom: 5px; font-weight: 500; }
+.sc-table td { font-size: 12px; padding: 5px 0; }
+.sc-table tr + tr { border-top: 1px solid var(--border); }
+
+/* blinking cursor */
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.blink { animation: blink 1s step-end infinite; }
+
+/* Navbar slider */
+.nav-slider {
+  position: absolute;
+  bottom: 0;
+  height: 2px;
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+/* Page entrance animation */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-anim {
+  animation: fade-in-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Break timer pulse */
+@keyframes timer-pulse {
+  0%,100% { opacity:1; }
+  50% { opacity:0.5; }
+}
+.timer-pulse { animation: timer-pulse 1s ease-in-out infinite; }
+
+/* inputs */
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  border-radius: 4px;
+  padding: 9px 12px;
+  width: 100%;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+}
+
+/* Overlay backdrop */
+.overlay-bg {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.65);
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Mobile Responsive Utility Classes */
+.grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+@media (max-width: 480px) {
+  .grid-2 { grid-template-columns: 1fr; }
+  .grid-3 { grid-template-columns: 1fr; }
+}
+
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
