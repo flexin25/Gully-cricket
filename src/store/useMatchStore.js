@@ -7,6 +7,7 @@ const defaultBowlerStat = () => ({ overs: 0, balls: 0, runs: 0, wickets: 0, maid
 
 const initialState = {
   // Setup
+  matchId: null,
   matchName: '',
   teamA: { name: 'Team A', players: [] },
   teamB: { name: 'Team B', players: [] },
@@ -61,27 +62,33 @@ const useMatchStore = create(
 
       saveMatchToHistory: () => {
         const s = get()
-        const entry = {
-          id: Date.now(),
-          matchName: s.matchName || `${s.teamA.name} vs ${s.teamB.name}`,
-          date: new Date().toISOString(),
-          teamA: s.teamA,
-          teamB: s.teamB,
-          totalOvers: s.totalOvers,
-          powerplayOvers: s.powerplayOvers,
-          innings1: s.innings1,
-          innings2: {
-            score: s.score,
-            wickets: s.wickets,
-            balls: s.totalBalls,
-            teamName: (s.battingTeam === 'A' ? s.teamA : s.teamB).name,
-            extras: s.extras,
-            batsmanStats: s.batsmanStats,
-            bowlerStats: s.bowlerStats,
-          },
-          battingTeam: s.battingTeam,
-        }
-        set((state) => ({ matchHistory: [entry, ...state.matchHistory] }))
+        if (!s.matchId) return
+
+        set((state) => {
+          if (state.matchHistory.some(m => m.id === state.matchId)) return state
+
+          const entry = {
+            id: state.matchId,
+            matchName: s.matchName || `${s.teamA.name} vs ${s.teamB.name}`,
+            date: new Date().toISOString(),
+            teamA: s.teamA,
+            teamB: s.teamB,
+            totalOvers: s.totalOvers,
+            powerplayOvers: s.powerplayOvers,
+            innings1: s.innings1,
+            innings2: {
+              score: s.score,
+              wickets: s.wickets,
+              balls: s.totalBalls,
+              teamName: (s.battingTeam === 'A' ? s.teamA : s.teamB).name,
+              extras: s.extras,
+              batsmanStats: s.batsmanStats,
+              bowlerStats: s.bowlerStats,
+            },
+            battingTeam: s.battingTeam,
+          }
+          return { matchHistory: [entry, ...state.matchHistory] }
+        })
       },
 
       deleteHistoryEntry: (id) =>
@@ -99,6 +106,8 @@ const useMatchStore = create(
         const bowlingTeam = battingTeam === 'A' ? 'B' : 'A'
 
         set({
+          ...initialState,
+          matchId: Date.now(),
           matchName: matchName || '',
           teamA, teamB, totalOvers,
           powerplayOvers: powerplayOvers || 0,

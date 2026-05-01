@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import useMatchStore from '../store/useMatchStore'
 import { useTheme } from '../store/useThemeStore'
 import { ballsToOvers, calcSR, calcEconomy, getResult } from '../utils/calculations'
+import { downloadPDF } from '../utils/pdf'
 import Footer from '../components/Footer'
+import { Download } from 'lucide-react'
 
 const LAYOUT = { maxWidth: 560, margin: '0 auto', padding: '0 20px 80px' }
 
@@ -16,6 +18,7 @@ export default function Summary() {
     battingTeam, totalOvers, matchName,
     batsmanStats: inn2Bat, bowlerStats: inn2Bowl,
     resetMatch, saveMatchToHistory,
+    matchId, matchHistory
   } = useMatchStore()
 
   const inn2Team = battingTeam === 'A' ? teamA : teamB
@@ -90,6 +93,10 @@ export default function Summary() {
             New Match →
           </button>
         </div>
+        <button className="btn-t" onClick={() => downloadPDF(matchHistory.find(m => m.id === matchId))}
+          style={{ width: '100%', background: t.card, border: `1px solid ${t.border}`, borderRadius: 4, color: t.muted, padding: '10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}>
+          <Download size={14} /> Download Scorecard
+        </button>
       </div>
       <Footer />
     </div>
