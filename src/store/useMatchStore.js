@@ -242,9 +242,7 @@ const useMatchStore = create(
         // Strike rotation
         let { striker: newStriker, nonStriker: newNonStriker } = currentBatsmen
         if (!isWicket) {
-          if (!extraType || extraType === 'bye' || extraType === 'legBye') {
-            if (runs % 2 === 1) [newStriker, newNonStriker] = [newNonStriker, newStriker]
-          }
+          if (runs % 2 === 1) [newStriker, newNonStriker] = [newNonStriker, newStriker]
         }
         if (isEndOfOver && !isWicket) {
           ;[newStriker, newNonStriker] = [newNonStriker, newStriker]

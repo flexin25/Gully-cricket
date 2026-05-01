@@ -22,13 +22,29 @@ export default function Scoreboard() {
 
   const isPowerplay = powerplayOvers > 0 && totalBalls < powerplayOvers * 6
 
+  // Group balls into overs
+  const oversList = []
+  let currentOverGrp = []
+  let legalInCurrent = 0
+  for (const b of ballsHistory) {
+    currentOverGrp.push(b)
+    if (b.legal) legalInCurrent++
+    if (legalInCurrent === 6) {
+      oversList.push(currentOverGrp)
+      currentOverGrp = []
+      legalInCurrent = 0
+    }
+  }
+  if (currentOverGrp.length > 0) oversList.push(currentOverGrp)
+  const displayBalls = oversList.length > 0 ? oversList[oversList.length - 1] : []
+
   // Ball history tokens
-  const tokens = ballsHistory.slice(-18).map((b) => {
+  const tokens = displayBalls.map((b) => {
     if (b.isWicket) return { label: 'W', color: t.red }
-    if (b.extraType === 'wide') return { label: 'Wd', color: t.yellow }
-    if (b.extraType === 'noBall') return { label: 'Nb', color: t.yellow }
-    if (b.extraType === 'bye') return { label: 'B', color: t.muted }
-    if (b.extraType === 'legBye') return { label: 'Lb', color: t.muted }
+    if (b.extraType === 'wide') return { label: b.runs > 0 ? `Wd+${b.runs}` : 'Wd', color: t.yellow }
+    if (b.extraType === 'noBall') return { label: b.runs > 0 ? `Nb+${b.runs}` : 'Nb', color: t.yellow }
+    if (b.extraType === 'bye') return { label: `B${b.runs}`, color: t.muted }
+    if (b.extraType === 'legBye') return { label: `Lb${b.runs}`, color: t.muted }
     if (b.runs === 4) return { label: '4', color: t.accent }
     if (b.runs === 6) return { label: '6', color: t.accent }
     return { label: b.runs === 0 ? '·' : String(b.runs), color: t.muted }
