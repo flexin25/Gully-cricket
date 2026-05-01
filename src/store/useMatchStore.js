@@ -46,6 +46,9 @@ const initialState = {
   // Wicket flow
   pendingWicket: null, // { dismissal } — waiting for fielder
 
+  // Match state
+  isFreeHit: false,
+
   // Break timer
   breakActive: false,
   breakEndTime: null,
@@ -126,6 +129,7 @@ const useMatchStore = create(
           needNewBatsman: false, needNewBowler: false,
           pendingWicket: null,
           breakActive: false, breakEndTime: null, breaksTaken: 0,
+          isFreeHit: false,
         })
       },
 
@@ -248,23 +252,34 @@ const useMatchStore = create(
           newBowlerStats[currentBowler] = bw
         }
 
-        // Strike rotation
         let { striker: newStriker, nonStriker: newNonStriker } = currentBatsmen
         if (!isWicket) {
           if (runs % 2 === 1) [newStriker, newNonStriker] = [newNonStriker, newStriker]
         }
-        if (isEndOfOver && !isWicket) {
-          ;[newStriker, newNonStriker] = [newNonStriker, newStriker]
+
+        let updatedBatsmen = { striker: newStriker, nonStriker: newNonStriker }
+        if (isWicket) {
+          updatedBatsmen.striker = null
+        }
+        
+        if (isEndOfOver) {
+          const temp = updatedBatsmen.striker
+          updatedBatsmen.striker = updatedBatsmen.nonStriker
+          updatedBatsmen.nonStriker = temp
         }
 
         const histEntry = { runs, extraType, isWicket, dismissal, legal, runsToAdd }
         const newHistory = [...ballsHistory, histEntry]
 
-        const allOut = isWicket && (wickets + 1) >= 10
+        const battingTeamObj = battingTeam === 'A' ? teamA : teamB
+        const maxWickets = Math.max(1, battingTeamObj.players.length - 1)
+        const allOut = isWicket && (wickets + 1) >= maxWickets
         const oversUp = isEndOfOver && (Math.floor(newTotalBalls / 6) >= totalOvers)
         const inningsOver = allOut || oversUp
 
-        const battingTeamObj = battingTeam === 'A' ? teamA : teamB
+        let newIsFreeHit = state.isFreeHit
+        if (extraType === 'noBall') newIsFreeHit = true
+        else if (extraType !== 'wide') newIsFreeHit = false
         const chasing = phase === 'innings2'
         const target = innings1 ? innings1.score + 1 : null
         const chasersWon = chasing && newScore >= (target || Infinity)
@@ -282,6 +297,7 @@ const useMatchStore = create(
             ballsHistory: newHistory,
             phase: 'done',
             needNewBatsman: false, needNewBowler: false,
+            isFreeHit: newIsFreeHit,
           })
           return
         }
@@ -319,6 +335,7 @@ const useMatchStore = create(
               needNewBowler: true,
               newBatsmanSlot: null,
               breaksTaken: 0,
+              isFreeHit: false,
             })
           } else {
             set({
@@ -333,17 +350,15 @@ const useMatchStore = create(
               ballsHistory: newHistory,
               phase: 'done',
               needNewBatsman: false, needNewBowler: false,
+              isFreeHit: newIsFreeHit,
             })
           }
           return
         }
 
-        const needBatsman = isWicket && (wickets + 1) < 10
-        const needBowler = isEndOfOver && !needBatsman
-
-        const updatedBatsmen = isWicket
-          ? { striker: null, nonStriker: newNonStriker }
-          : { striker: newStriker, nonStriker: newNonStriker }
+        const needBatsman = isWicket && !allOut
+        const slot = updatedBatsmen.striker === null ? 'striker' : 'nonStriker'
+        const needBowler = isEndOfOver && !allOut
 
         set({
           score: newScore,
@@ -357,7 +372,8 @@ const useMatchStore = create(
           ballsHistory: newHistory,
           needNewBatsman: needBatsman,
           needNewBowler: needBowler,
-          newBatsmanSlot: needBatsman ? 'striker' : null,
+          newBatsmanSlot: needBatsman ? slot : null,
+          isFreeHit: newIsFreeHit,
         })
       },
 

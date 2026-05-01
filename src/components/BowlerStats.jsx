@@ -4,8 +4,13 @@ import { ballsToOvers, calcEconomy } from '../utils/calculations'
 
 export default function BowlerStats() {
   const t = useTheme()
-  const { currentBowler, bowlerStats } = useMatchStore()
+  const { currentBowler, bowlerStats, bowlingTeam, teamA, teamB } = useMatchStore()
   if (!currentBowler) return null
+
+  const team = bowlingTeam === 'A' ? teamA : teamB
+  const isC = team?.captain === currentBowler
+  const isVC = team?.viceCaptain === currentBowler
+  const roleStr = isC ? ' (c)' : isVC ? ' (vc)' : ''
 
   const stats = bowlerStats[currentBowler] || { balls: 0, overs: 0, runs: 0, wickets: 0 }
   const totalB = (stats.overs * 6) + stats.balls
@@ -35,6 +40,7 @@ export default function BowlerStats() {
           <tr style={{ borderTop: `1px solid ${t.border}` }}>
             <td style={{ ...td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 0 }}>
               <span style={{ color: t.muted, marginRight: 4 }}>{'▹'}</span>{currentBowler}
+              <span style={{ fontSize: 9, color: t.muted }}>{roleStr}</span>
             </td>
             <td style={tdn}>{oversStr}</td>
             <td style={tdn}>{stats.runs}</td>

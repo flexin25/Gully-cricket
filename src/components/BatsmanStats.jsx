@@ -4,7 +4,8 @@ import { calcSR } from '../utils/calculations'
 
 export default function BatsmanStats() {
   const t = useTheme()
-  const { currentBatsmen, batsmanStats } = useMatchStore()
+  const { currentBatsmen, batsmanStats, battingTeam, teamA, teamB } = useMatchStore()
+  const team = battingTeam === 'A' ? teamA : teamB
   const { striker, nonStriker } = currentBatsmen
   if (!striker && !nonStriker) return null
 
@@ -30,8 +31,8 @@ export default function BatsmanStats() {
           <th style={{ ...th, textAlign: 'right' }}>SR</th>
         </tr></thead>
         <tbody>
-          {striker && <Row t={t} name={striker} s={batsmanStats[striker]} on th={th} td={td} tdn={tdn} />}
-          {nonStriker && <Row t={t} name={nonStriker} s={batsmanStats[nonStriker]} td={td} tdn={tdn} />}
+          {striker && <Row t={t} name={striker} s={batsmanStats[striker]} on th={th} td={td} tdn={tdn} team={team} />}
+          {nonStriker && <Row t={t} name={nonStriker} s={batsmanStats[nonStriker]} td={td} tdn={tdn} team={team} />}
         </tbody>
         </table>
       </div>
@@ -39,13 +40,17 @@ export default function BatsmanStats() {
   )
 }
 
-function Row({ t, name, s: raw, on, td, tdn }) {
+function Row({ t, name, s: raw, on, td, tdn, team }) {
   const s = raw || { runs: 0, balls: 0, fours: 0, sixes: 0 }
+  const isC = team?.captain === name
+  const isVC = team?.viceCaptain === name
+  const roleStr = isC ? ' (c)' : isVC ? ' (vc)' : ''
+
   return (
     <tr style={{ borderTop: `1px solid ${t.border}` }}>
       <td style={{ ...td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 0 }}>
         <span style={{ color: on ? t.accent : t.text, marginRight: 4, fontWeight: on ? 700 : 400 }}>{on ? '▸' : ' '}</span>
-        {name}
+        {name}<span style={{ fontSize: 9, color: t.muted }}>{roleStr}</span>
       </td>
       <td style={{ ...tdn, color: t.accent, fontWeight: 600 }}>{s.runs}</td>
       <td style={tdn}>{s.balls}</td>
