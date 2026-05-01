@@ -20,6 +20,9 @@ export default function MatchSetup() {
   const [decision, setDecision] = useState('bat')
   const [step, setStep] = useState(1)
 
+  const [captains, setCaptains] = useState({ A: null, B: null })
+  const [viceCaptains, setViceCaptains] = useState({ A: null, B: null })
+
   const handlePlayerChange = (team, idx, val) => {
     if (team === 'A') { const u = [...playersA]; u[idx] = val; setPlayersA(u) }
     else { const u = [...playersB]; u[idx] = val; setPlayersB(u) }
@@ -35,8 +38,8 @@ export default function MatchSetup() {
   const handleStart = () => {
     setupMatch({
       matchName,
-      teamA: { name: teamAName || 'Team A', players: playersA.filter(Boolean) },
-      teamB: { name: teamBName || 'Team B', players: playersB.filter(Boolean) },
+      teamA: { name: teamAName || 'Team A', players: playersA.filter(Boolean), captain: captains.A, viceCaptain: viceCaptains.A },
+      teamB: { name: teamBName || 'Team B', players: playersB.filter(Boolean), captain: captains.B, viceCaptain: viceCaptains.B },
       totalOvers, powerplayOvers: Math.min(powerplayOvers, totalOvers),
       toss, decision,
     })
@@ -116,6 +119,14 @@ export default function MatchSetup() {
                     <span style={{ color: t.border, fontSize: 12, minWidth: 20 }}>{idx + 1}.</span>
                     <input style={{ ...inp, flex: 1 }} placeholder={`Player ${idx + 1}`} value={p}
                       onChange={e => handlePlayerChange(team, idx, e.target.value)} />
+                    {p && (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button onClick={() => setCaptains(prev => ({ ...prev, [team]: prev[team] === p ? null : p }))}
+                          style={{ background: captains[team] === p ? t.accent : 'transparent', color: captains[team] === p ? t.bg : t.muted, border: `1px solid ${t.border}`, borderRadius: 3, padding: '2px 4px', fontSize: 9, fontWeight: 700, cursor: 'pointer' }}>C</button>
+                        <button onClick={() => setViceCaptains(prev => ({ ...prev, [team]: prev[team] === p ? null : p }))}
+                          style={{ background: viceCaptains[team] === p ? t.accent : 'transparent', color: viceCaptains[team] === p ? t.bg : t.muted, border: `1px solid ${t.border}`, borderRadius: 3, padding: '2px 4px', fontSize: 9, fontWeight: 700, cursor: 'pointer' }}>VC</button>
+                      </div>
+                    )}
                     {players.length > 2 && (
                       <button onClick={() => removePlayer(team, idx)} style={{ background: 'none', border: 'none', color: t.muted, cursor: 'pointer', padding: '0 4px' }}>
                         <Trash2 size={13} />

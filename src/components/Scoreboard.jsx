@@ -7,7 +7,7 @@ export default function Scoreboard() {
   const {
     score, wickets, totalBalls, totalOvers, powerplayOvers,
     battingTeam, teamA, teamB,
-    phase, innings1, ballsHistory,
+    phase, innings1, ballsHistory, isFreeHit,
   } = useMatchStore()
 
   const batting = battingTeam === 'A' ? teamA : teamB
@@ -58,6 +58,11 @@ export default function Scoreboard() {
           {batting.name}
         </span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {isFreeHit && (
+            <span style={{ color: t.red, fontSize: 10, fontWeight: 700, border: `1px solid ${t.red}44`, background: t.red + '11', borderRadius: 3, padding: '2px 6px' }}>
+              FREE HIT
+            </span>
+          )}
           {isPowerplay && (
             <span style={{ color: t.yellow, fontSize: 10, fontWeight: 600, border: `1px solid ${t.yellow}33`, borderRadius: 3, padding: '2px 6px' }}>
               PP
