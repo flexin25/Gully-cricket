@@ -79,13 +79,17 @@ const useMatchStore = create(
       // ─── Match History (persisted in the same key as the live match state) ────
       matchHistory: [],
 
+      // Records the finished match. Innings 1 is already a stored snapshot, but
+      // innings 2 only exists in the live top-level fields, so it is assembled
+      // here — which is why this must run once the match is actually over.
       saveMatchToHistory: () => {
         const s = get()
         if (!s.matchId) return
+        // Nothing but a completed match belongs in history. Reaching Summary
+        // mid-chase used to file an entry holding a part-played 2nd innings.
+        if (s.phase !== 'done') return
 
         set((state) => {
-          if (state.matchHistory.some(m => m.id === state.matchId)) return state
-
           const entry = {
             id: state.matchId,
             matchName: s.matchName || `${s.teamA.name} vs ${s.teamB.name}`,
@@ -113,7 +117,16 @@ const useMatchStore = create(
             tossCall: s.tossCall,
             tossResult: s.tossResult,
           }
-          return { matchHistory: [entry, ...state.matchHistory] }
+          const idx = state.matchHistory.findIndex((m) => m.id === state.matchId)
+          if (idx === -1) return { matchHistory: [entry, ...state.matchHistory] }
+          // Upsert instead of bailing out. An entry filed from an earlier state
+          // (or by an older build) has to be corrected in place — the PDF and
+          // the history list both read from here, so a stale one is what made
+          // the 2nd innings look missing. Keep its slot and original date so
+          // history doesn't reshuffle under the user.
+          const next = [...state.matchHistory]
+          next[idx] = { ...entry, date: state.matchHistory[idx].date || entry.date }
+          return { matchHistory: next }
         })
       },
 

@@ -15,11 +15,11 @@ export default function Summary() {
   const {
     teamA, teamB, innings1,
     score: inn2Score, wickets: inn2Wickets, totalBalls: inn2Balls,
-    battingTeam, matchName,
+    battingTeam, matchName, totalOvers, powerplayOvers, extras,
     batsmanStats: inn2Bat, bowlerStats: inn2Bowl,
     resetMatch, saveMatchToHistory,
     matchId, matchHistory,
-    tossWinner, tossDecision, tossMethod, tossCall,
+    tossWinner, tossDecision, tossMethod, tossCaller, tossCall, tossResult,
   } = useMatchStore()
 
   const inn2Team = battingTeam === 'A' ? teamA : teamB
@@ -39,6 +39,24 @@ export default function Summary() {
   }, [])
 
   const handleNew = () => { resetMatch(); navigate('/') }
+
+  /** Build the PDF from exactly what this page renders, rather than re-reading
+   *  the saved history entry. The two can disagree — that gap is what made the
+   *  2nd innings come out as a stub in the download — and the scorecard on
+   *  screen is the copy the user is looking at. Shape matches a history entry
+   *  so downloadPDF stays one code path. */
+  const handleDownload = () => {
+    const saved = matchHistory.find((m) => m.id === matchId)
+    downloadPDF({
+      matchName: matchName || `${teamA.name} vs ${teamB.name}`,
+      date: saved?.date || new Date().toISOString(),
+      teamA, teamB, totalOvers, powerplayOvers,
+      innings1: inn1,
+      innings2: { ...inn2, extras },
+      battingTeam,
+      tossWinner, tossDecision, tossMethod, tossCaller, tossCall, tossResult,
+    })
+  }
 
   const th = { color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', paddingBottom: 5, fontWeight: 500 }
   const td = { color: t.text, fontSize: 12, padding: '5px 0' }
@@ -97,7 +115,7 @@ export default function Summary() {
             New Match →
           </button>
         </div>
-        <button className="btn-t" onClick={() => downloadPDF(matchHistory.find(m => m.id === matchId))}
+        <button className="btn-t" onClick={handleDownload}
           style={{ width: '100%', background: t.card, border: `1px solid ${t.border}`, borderRadius: 4, color: t.muted, padding: '10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}>
           <Download size={14} /> Download Scorecard
         </button>

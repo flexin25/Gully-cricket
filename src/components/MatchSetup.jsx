@@ -35,30 +35,56 @@ export default function MatchSetup() {
   const [captains, setCaptains] = useState({ A: null, B: null })
   const [viceCaptains, setViceCaptains] = useState({ A: null, B: null })
 
+  /** Drop the C/VC badges a slot held once its name changes or the slot goes,
+   *  so captains.A can never name someone who left the team sheet. */
+  const dropBadges = (team, name) => {
+    if (!name) return
+    setCaptains((prev) => (prev[team] === name ? { ...prev, [team]: null } : prev))
+    setViceCaptains((prev) => (prev[team] === name ? { ...prev, [team]: null } : prev))
+  }
+
   const handlePlayerChange = (team, idx, val) => {
-    if (team === 'A') { const u = [...playersA]; u[idx] = val; setPlayersA(u) }
-    else { const u = [...playersB]; u[idx] = val; setPlayersB(u) }
+    const list = team === 'A' ? playersA : playersB
+    const was = list[idx]
+    const u = [...list]; u[idx] = val
+    if (team === 'A') setPlayersA(u); else setPlayersB(u)
+    if (was !== val) dropBadges(team, was)
   }
   const addPlayer = (team) => {
     if (team === 'A') setPlayersA([...playersA, ''])
     else setPlayersB([...playersB, ''])
   }
   const removePlayer = (team, idx) => {
-    if (team === 'A') setPlayersA(playersA.filter((_, i) => i !== idx))
-    else setPlayersB(playersB.filter((_, i) => i !== idx))
+    const list = team === 'A' ? playersA : playersB
+    if (team === 'A') setPlayersA(list.filter((_, i) => i !== idx))
+    else setPlayersB(list.filter((_, i) => i !== idx))
+    dropBadges(team, list[idx])
   }
   /** Both sides need MIN_PLAYERS named players, else maxWickets collapses. */
   const rosterReady = () =>
     playersA.filter(Boolean).length >= MIN_PLAYERS && playersB.filter(Boolean).length >= MIN_PLAYERS
+
+  /** Which of captain / vice-captain a side has still not picked. Both are
+   *  required — they're stored on the team and printed beside the name on the
+   *  scorecard, and there's no way to set them once the match has started. */
+  const leadersMissing = (team) => {
+    const missing = []
+    if (!captains[team]) missing.push('captain')
+    if (!viceCaptains[team]) missing.push('vice-captain')
+    return missing
+  }
+  const leadersReady = () => !leadersMissing('A').length && !leadersMissing('B').length
 
   const errA = teamNameError(teamAName)
   const errB = teamNameError(teamBName)
   const namesOk = !errA && !errB
 
   const shortfall = (players) => MIN_PLAYERS - players.filter(Boolean).length
+  const stepTwoReady = rosterReady() && leadersReady()
 
   const goToToss = () => {
-    if (!rosterReady()) return  // the inline warning below already explains why
+    // The inline warnings below already explain both blockers.
+    if (!rosterReady() || !leadersReady()) return
     setStep(3)
   }
 
@@ -66,7 +92,7 @@ export default function MatchSetup() {
   const handleStart = (toss) => {
     const namedA = playersA.filter(Boolean)
     const namedB = playersB.filter(Boolean)
-    if (namedA.length < MIN_PLAYERS || namedB.length < MIN_PLAYERS) {
+    if (namedA.length < MIN_PLAYERS || namedB.length < MIN_PLAYERS || !leadersReady()) {
       setStep(2)
       return
     }
@@ -187,13 +213,20 @@ export default function MatchSetup() {
                     Needs {shortfall(players)} more {shortfall(players) === 1 ? 'name' : 'names'} — minimum {MIN_PLAYERS} players per team.
                   </Warn>
                 )}
+                {/* Held back until the roster is full, so a fresh side shows one
+                    blocker at a time instead of two warnings at once. */}
+                {shortfall(players) <= 0 && leadersMissing(team).length > 0 && (
+                  <Warn t={t}>
+                    Pick a {leadersMissing(team).join(' and a ')} for {name} — tap C / VC beside a player.
+                  </Warn>
+                )}
               </div>
             </div>
           ))}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginTop: 20 }}>
             <button className="btn-t" onClick={() => setStep(1)} style={{ background: 'none', border: `1px solid ${t.border}`, borderRadius: 4, color: t.muted, padding: '10px', fontSize: 12 }}>← Back</button>
-            <button id="btn-to-toss" className="btn-t" disabled={!rosterReady()} onClick={goToToss}
-              style={{ background: 'none', border: `1px solid ${rosterReady() ? t.accent : t.border}`, borderRadius: 4, color: rosterReady() ? t.accent : t.muted, padding: '10px', fontSize: 13, fontWeight: 600 }}>Toss →</button>
+            <button id="btn-to-toss" className="btn-t" disabled={!stepTwoReady} onClick={goToToss}
+              style={{ background: 'none', border: `1px solid ${stepTwoReady ? t.accent : t.border}`, borderRadius: 4, color: stepTwoReady ? t.accent : t.muted, padding: '10px', fontSize: 13, fontWeight: 600 }}>Toss →</button>
           </div>
         </div>
       )}
