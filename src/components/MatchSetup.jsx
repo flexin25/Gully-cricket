@@ -1,13 +1,12 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import useMatchStore from '../store/useMatchStore'
 import { useTheme } from '../store/useThemeStore'
 import { Plus, Trash2 } from 'lucide-react'
+import TossCoin from './TossCoin'
 
 export default function MatchSetup() {
   const t = useTheme()
   const setupMatch = useMatchStore((s) => s.setupMatch)
-  const navigate = useNavigate()
 
   const [matchName, setMatchName] = useState('')
   const [teamAName, setTeamAName] = useState('')
@@ -16,8 +15,6 @@ export default function MatchSetup() {
   const [playersB, setPlayersB] = useState(['', '', '', '', '', ''])
   const [totalOvers, setTotalOvers] = useState(6)
   const [powerplayOvers, setPowerplayOvers] = useState(0)
-  const [toss, setToss] = useState('A')
-  const [decision, setDecision] = useState('bat')
   const [step, setStep] = useState(1)
 
   const [captains, setCaptains] = useState({ A: null, B: null })
@@ -35,24 +32,41 @@ export default function MatchSetup() {
     if (team === 'A') setPlayersA(playersA.filter((_, i) => i !== idx))
     else setPlayersB(playersB.filter((_, i) => i !== idx))
   }
-  const handleStart = () => {
+  /** Both sides need 2+ named players, else maxWickets collapses to 1. */
+  const rosterReady = () =>
+    playersA.filter(Boolean).length >= 2 && playersB.filter(Boolean).length >= 2
+
+  const goToToss = () => {
+    if (!rosterReady()) {
+      alert('Each team needs at least 2 named players to start a match.')
+      return
+    }
+    setStep(3)
+  }
+
+  /** `toss` receives the finished toss from TossCoin (or its manual override). */
+  const handleStart = (toss) => {
+    const namedA = playersA.filter(Boolean)
+    const namedB = playersB.filter(Boolean)
+    if (namedA.length < 2 || namedB.length < 2) {
+      alert('Each team needs at least 2 named players to start a match.')
+      setStep(2)
+      return
+    }
     setupMatch({
       matchName,
-      teamA: { name: teamAName || 'Team A', players: playersA.filter(Boolean), captain: captains.A, viceCaptain: viceCaptains.A },
-      teamB: { name: teamBName || 'Team B', players: playersB.filter(Boolean), captain: captains.B, viceCaptain: viceCaptains.B },
+      teamA: { name: teamAName || 'Team A', players: namedA, captain: captains.A, viceCaptain: viceCaptains.A },
+      teamB: { name: teamBName || 'Team B', players: namedB, captain: captains.B, viceCaptain: viceCaptains.B },
       totalOvers, powerplayOvers: Math.min(powerplayOvers, totalOvers),
-      toss, decision,
+      ...toss,
     })
-    navigate('/match')
+    // No navigate() — Match.jsx renders this wizard while phase === 'setup' and
+    // swaps to the scoring UI on its own once setupMatch flips it to 'innings1'.
   }
 
   const inp = { background: t.bg, border: `1px solid ${t.border}`, borderRadius: 4, color: t.text, fontFamily: 'inherit', fontSize: 13, padding: '9px 12px', width: '100%', outline: 'none' }
   const OVERS = [4, 5, 6, 8, 10, 12, 15, 20, 25, 50]
   const stepNames = ['', 'MATCH INFO', 'PLAYERS', 'TOSS & START']
-
-  const Lbl = ({ children }) => (
-    <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5, marginTop: 14 }}>▸ {children}</div>
-  )
 
   const radio = (active) => ({
     background: active ? t.surface : 'transparent',
@@ -76,15 +90,15 @@ export default function MatchSetup() {
       {/* Step 1 — Match info */}
       {step === 1 && (
         <div>
-          <Lbl>match name (optional)</Lbl>
+          <Lbl t={t}>match name (optional)</Lbl>
           <input style={inp} placeholder="e.g. Finals — Sunday League" value={matchName} onChange={e => setMatchName(e.target.value)} />
 
-          <Lbl>team a</Lbl>
+          <Lbl t={t}>team a</Lbl>
           <input style={inp} placeholder="e.g. Street Warriors" value={teamAName} onChange={e => setTeamAName(e.target.value)} />
-          <Lbl>team b</Lbl>
+          <Lbl t={t}>team b</Lbl>
           <input style={inp} placeholder="e.g. Gully Kings" value={teamBName} onChange={e => setTeamBName(e.target.value)} />
 
-          <Lbl>overs per innings</Lbl>
+          <Lbl t={t}>overs per innings</Lbl>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
             {OVERS.map(o => (
               <button key={o} className="btn-t" onClick={() => { setTotalOvers(o); if (powerplayOvers > o) setPowerplayOvers(0) }}
@@ -92,7 +106,7 @@ export default function MatchSetup() {
             ))}
           </div>
 
-          <Lbl>powerplay overs (0 = off)</Lbl>
+          <Lbl t={t}>powerplay overs (0 = off)</Lbl>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
             {[0, 1, 2, 3, 4, 5, 6, 8, 10].filter(o => o <= totalOvers).map(o => (
               <button key={o} className="btn-t" onClick={() => setPowerplayOvers(o)}
@@ -112,7 +126,7 @@ export default function MatchSetup() {
         <div>
           {[{ team: 'A', name: teamAName || 'Team A', players: playersA }, { team: 'B', name: teamBName || 'Team B', players: playersB }].map(({ team, name, players }) => (
             <div key={team}>
-              <Lbl>{name} players</Lbl>
+              <Lbl t={t}>{name} players</Lbl>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {players.map((p, idx) => (
                   <div key={idx} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -121,9 +135,15 @@ export default function MatchSetup() {
                       onChange={e => handlePlayerChange(team, idx, e.target.value)} />
                     {p && (
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => setCaptains(prev => ({ ...prev, [team]: prev[team] === p ? null : p }))}
+                        <button onClick={() => {
+                          setCaptains(prev => ({ ...prev, [team]: prev[team] === p ? null : p }))
+                          setViceCaptains(prev => (prev[team] === p ? { ...prev, [team]: null } : prev))
+                        }}
                           style={{ background: captains[team] === p ? t.accent : 'transparent', color: captains[team] === p ? t.bg : t.muted, border: `1px solid ${t.border}`, borderRadius: 3, padding: '2px 4px', fontSize: 9, fontWeight: 700, cursor: 'pointer' }}>C</button>
-                        <button onClick={() => setViceCaptains(prev => ({ ...prev, [team]: prev[team] === p ? null : p }))}
+                        <button onClick={() => {
+                          setViceCaptains(prev => ({ ...prev, [team]: prev[team] === p ? null : p }))
+                          setCaptains(prev => (prev[team] === p ? { ...prev, [team]: null } : prev))
+                        }}
                           style={{ background: viceCaptains[team] === p ? t.accent : 'transparent', color: viceCaptains[team] === p ? t.bg : t.muted, border: `1px solid ${t.border}`, borderRadius: 3, padding: '2px 4px', fontSize: 9, fontWeight: 700, cursor: 'pointer' }}>VC</button>
                       </div>
                     )}
@@ -143,49 +163,29 @@ export default function MatchSetup() {
           ))}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginTop: 20 }}>
             <button className="btn-t" onClick={() => setStep(1)} style={{ background: 'none', border: `1px solid ${t.border}`, borderRadius: 4, color: t.muted, padding: '10px', fontSize: 12 }}>← Back</button>
-            <button className="btn-t" onClick={() => setStep(3)} style={{ background: 'none', border: `1px solid ${t.accent}`, borderRadius: 4, color: t.accent, padding: '10px', fontSize: 13, fontWeight: 600 }}>Toss →</button>
+            <button className="btn-t" onClick={goToToss} style={{ background: 'none', border: `1px solid ${t.accent}`, borderRadius: 4, color: t.accent, padding: '10px', fontSize: 13, fontWeight: 600 }}>Toss →</button>
           </div>
         </div>
       )}
 
-      {/* Step 3 — Toss */}
+      {/* Step 3 — Toss (the app flips the coin) */}
       {step === 3 && (
-        <div>
-          <Lbl>toss winner</Lbl>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-            {[{ val: 'A', lbl: teamAName || 'Team A' }, { val: 'B', lbl: teamBName || 'Team B' }].map(({ val, lbl }) => (
-              <button key={val} className="btn-t" onClick={() => setToss(val)} style={radio(toss === val)}>
-                {toss === val ? '[●] ' : '[○] '}{lbl}
-              </button>
-            ))}
-          </div>
-          <Lbl>elected to</Lbl>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-            {[{ val: 'bat', lbl: 'BAT' }, { val: 'bowl', lbl: 'BOWL' }].map(({ val, lbl }) => (
-              <button key={val} className="btn-t" onClick={() => setDecision(val)} style={radio(decision === val)}>
-                {decision === val ? '[●] ' : '[○] '}{lbl}
-              </button>
-            ))}
-          </div>
-
-          {/* Summary */}
-          <div style={{ marginTop: 14, color: t.muted, fontSize: 12, borderTop: `1px solid ${t.border}`, paddingTop: 10 }}>
-            {matchName && <div style={{ color: t.text, marginBottom: 4 }}>"{matchName}"</div>}
-            <span style={{ color: t.text }}>{toss === 'A' ? teamAName || 'Team A' : teamBName || 'Team B'}</span>
-            {' '}won toss → <span style={{ color: t.text }}>{decision}</span>
-            {' '} · <span style={{ color: t.text }}>{totalOvers}</span>ov
-            {powerplayOvers > 0 && <> · <span style={{ color: t.yellow }}>PP {powerplayOvers}ov</span></>}
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginTop: 20 }}>
-            <button className="btn-t" onClick={() => setStep(2)} style={{ background: 'none', border: `1px solid ${t.border}`, borderRadius: 4, color: t.muted, padding: '10px', fontSize: 12 }}>← Back</button>
-            <button id="btn-start-match" className="btn-t" onClick={handleStart}
-              style={{ background: 'none', border: `1px solid ${t.accent}`, borderRadius: 4, color: t.accent, padding: '11px', fontSize: 13, fontWeight: 700 }}>
-              START MATCH →
-            </button>
-          </div>
-        </div>
+        <TossCoin
+          teamAName={teamAName}
+          teamBName={teamBName}
+          matchName={matchName}
+          totalOvers={totalOvers}
+          powerplayOvers={Math.min(powerplayOvers, totalOvers)}
+          onBack={() => setStep(2)}
+          onConfirm={handleStart}
+        />
       )}
     </div>
+  )
+}
+
+function Lbl({ t, children }) {
+  return (
+    <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5, marginTop: 14 }}>▸ {children}</div>
   )
 }

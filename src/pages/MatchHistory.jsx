@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useMatchStore from '../store/useMatchStore'
 import { useTheme } from '../store/useThemeStore'
-import { ballsToOvers, getResult } from '../utils/calculations'
+import { getResult, chasingMaxWickets } from '../utils/calculations'
 import { downloadPDF } from '../utils/pdf'
 import Footer from '../components/Footer'
 import { Trash2, Download, ArrowLeft, CheckSquare, Square } from 'lucide-react'
@@ -79,7 +79,7 @@ export default function MatchHistory() {
                 ? getResult(
                     { ...m.innings1, teamName: m.innings1.teamName },
                     m.innings2,
-                    m.totalOvers,
+                    chasingMaxWickets(m),
                   )
                 : '—'
               const isSelected = selectedMatches.includes(m.id)

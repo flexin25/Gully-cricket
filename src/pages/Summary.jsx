@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useMatchStore from '../store/useMatchStore'
 import { useTheme } from '../store/useThemeStore'
-import { ballsToOvers, calcSR, calcEconomy, getResult } from '../utils/calculations'
+import { ballsToOvers, calcSR, calcEconomy, getResult, bowlerBalls, tossSummary } from '../utils/calculations'
 import { downloadPDF } from '../utils/pdf'
 import Footer from '../components/Footer'
 import { Download } from 'lucide-react'
@@ -15,19 +15,22 @@ export default function Summary() {
   const {
     teamA, teamB, innings1,
     score: inn2Score, wickets: inn2Wickets, totalBalls: inn2Balls,
-    battingTeam, totalOvers, matchName,
+    battingTeam, matchName,
     batsmanStats: inn2Bat, bowlerStats: inn2Bowl,
     resetMatch, saveMatchToHistory,
-    matchId, matchHistory
+    matchId, matchHistory,
+    tossWinner, tossDecision, tossMethod, tossCall,
   } = useMatchStore()
 
   const inn2Team = battingTeam === 'A' ? teamA : teamB
   const inn1Team = battingTeam === 'A' ? teamB : teamA
+  const tossLine = tossSummary({ teamA, teamB, tossWinner, tossDecision, tossMethod, tossCall })
 
   const inn2 = { score: inn2Score, wickets: inn2Wickets, balls: inn2Balls, teamName: inn2Team.name, batsmanStats: inn2Bat, bowlerStats: inn2Bowl }
   const inn1 = innings1 ? { ...innings1, teamName: inn1Team.name } : null
 
-  const resultText = inn1 && inn2 ? getResult(inn1, inn2, totalOvers) : '—'
+  const maxWicketsChasing = inn2Team.players?.length ? Math.max(1, inn2Team.players.length - 1) : 10
+  const resultText = inn1 && inn2 ? getResult(inn1, inn2, maxWicketsChasing) : '—'
 
   // Auto-save to history on mount
   useEffect(() => {
@@ -59,6 +62,7 @@ export default function Summary() {
         <div className="sc-card" style={{ borderColor: t.accent + '44', background: t.accent + '08', textAlign: 'center' }}>
           <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>RESULT</div>
           <div style={{ color: t.accent, fontSize: 16, fontWeight: 700 }}>▸ {resultText}</div>
+          {tossLine && <div style={{ color: t.muted, fontSize: 11, marginTop: 6 }}>{tossLine}</div>}
         </div>
 
         {/* Innings side by side */}
@@ -139,10 +143,10 @@ function ScorecardTable({ t, th, td, tdn, title, type, stats }) {
               ) : (
                 <>
                   <td style={{ ...td, textAlign: 'left', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</td>
-                  <td style={tdn}>{ballsToOvers((s.overs || 0) * 6 + (s.balls || 0))}</td>
+                  <td style={tdn}>{ballsToOvers(bowlerBalls(s))}</td>
                   <td style={tdn}>{s.runs}</td>
                   <td style={{ ...tdn, color: s.wickets > 0 ? t.red : t.text, fontWeight: s.wickets > 0 ? 600 : 400 }}>{s.wickets}</td>
-                  <td style={tdn}>{calcEconomy(s.runs, (s.overs || 0) * 6 + (s.balls || 0))}</td>
+                  <td style={tdn}>{calcEconomy(s.runs, bowlerBalls(s))}</td>
                 </>
               )}
             </tr>

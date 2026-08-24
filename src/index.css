@@ -1,7 +1,67 @@
 @import "tailwindcss";
+/* Supplies animate-in / fade-in-0 / zoom-in-95 etc, used by ui/dialog.jsx.
+   Tailwind v4 successor to tailwindcss-animate. */
+@import "tw-animate-css";
+
+/* Theme switching is class-based (5 dark palettes + 1 light), not
+   prefers-color-scheme — useThemeEffect() toggles `.dark` on <html>. */
+@custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-family-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  /* `--font-family-mono` was not a valid v4 token name and generated no utility. */
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  /* Display face for titles and team names. Figures stay mono so columns align. */
+  --font-display: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+
+  /* Two additions to Tailwind's built-in size scale, which at a 16px root
+     already gives xs=12 sm=14 base=16 lg=18. Deliberately NOT overriding those
+     — shadcn components lean on text-sm/text-xs and would resize with them.
+       text-label  uppercase micro-caps; replaces the old 10px, too small for a
+                   5:1 grey outdoors
+       text-score  the headline scoreline; was a fixed 3.5rem that crowded 320px */
+  --text-label: 0.6875rem;
+  --text-label--line-height: 1.45;
+  --text-label--letter-spacing: 0.08em;
+  --text-score: clamp(3rem, 14vw, 4rem);
+  --text-score--line-height: 1;
+}
+
+/* Expose the runtime theme variables (set on :root by useThemeEffect) as
+   Tailwind utilities: bg-background, text-muted-foreground, border-input, … */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* CricHub extras */
+  --color-surface: var(--surface);
+  --color-accent-dim: var(--accent-dim);
+  --color-warn: var(--warn);
+  --color-info: var(--info);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root {
+  --radius: 0.375rem;
 }
 
 *, *::before, *::after {
@@ -9,19 +69,28 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* NOTE: these rules are intentionally unlayered. Unlayered CSS outranks
+   @layer base, which is what stops Tailwind's preflight from resetting the
+   app to a sans-serif stack. Do not move them into a layer. */
 html, body, #root {
   height: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-  font-size: 14px;
   overflow-x: hidden;
+}
+
+/* 14px lives on body, not html: html stays at the browser default so
+   Tailwind's rem-based utilities compute at their documented px sizes,
+   and a reader who raises their browser font size still gets it. */
+body, #root {
+  font-size: 0.875rem;
 }
 
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #1F2937; border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 /* btn base */
 .btn-t {
@@ -49,18 +118,6 @@ html, body, #root {
 .sc-table td { font-size: 12px; padding: 5px 0; }
 .sc-table tr + tr { border-top: 1px solid var(--border); }
 
-/* blinking cursor */
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-.blink { animation: blink 1s step-end infinite; }
-
-/* Navbar slider */
-.nav-slider {
-  position: absolute;
-  bottom: 0;
-  height: 2px;
-  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
-}
-
 /* Page entrance animation */
 @keyframes fade-in-up {
   from { opacity: 0; transform: translateY(8px); }
@@ -77,6 +134,56 @@ html, body, #root {
 }
 .timer-pulse { animation: timer-pulse 1s ease-in-out infinite; }
 
+/* ── Toss coin (TossCoin.jsx) ──────────────────────────────────────────────
+   The landing angle is handed in as --coin-end on the element, so one set of
+   keyframes reveals either face. The result is decided in JS *before* the spin
+   starts — the animation is a reveal, never the source of truth.
+   Face colours come from Tailwind utilities; only width/style live here, so
+   there's no unlayered-vs-utility conflict over border-color or background. */
+.coin {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  transform-style: preserve-3d;
+  transform: rotateY(var(--coin-end, 0deg));
+}
+.coin-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 9999px;
+  border-width: 2px;
+  border-style: solid;
+  backface-visibility: hidden;
+}
+.coin-face--back { transform: rotateY(180deg); }
+
+@keyframes coin-flip {
+  0%   { transform: rotateY(0deg) translateY(0) scale(1); }
+  45%  { transform: rotateY(calc(var(--coin-end) * 0.5)) translateY(-38px) scale(1.06); }
+  100% { transform: rotateY(var(--coin-end)) translateY(0) scale(1); }
+}
+.coin--flipping { animation: coin-flip 1.15s cubic-bezier(0.33, 0, 0.25, 1); }
+
+@keyframes coin-reveal {
+  from { opacity: 0.25; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No spin. The resting transform already shows the correct face, so this
+     only cross-fades it in — and still fires animationend, so TossCoin's
+     reveal handler is the same code path in both modes. */
+  .coin--flipping { animation: coin-reveal 180ms ease-out; }
+}
+
+/* Hide the scrollbar on horizontally-scrolled strips (over-by-over history). */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 /* inputs */
 input, select, textarea {
   font-family: inherit;
@@ -86,8 +193,9 @@ input, select, textarea {
   width: 100%;
   outline: none;
 }
+/* --ring is the brand colour; --accent is shadcn's subtle hover background. */
 input:focus, select:focus, textarea:focus {
-  border-color: var(--accent);
+  border-color: var(--ring);
 }
 
 /* Overlay backdrop */

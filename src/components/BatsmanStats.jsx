@@ -31,7 +31,7 @@ export default function BatsmanStats() {
           <th style={{ ...th, textAlign: 'right' }}>SR</th>
         </tr></thead>
         <tbody>
-          {striker && <Row t={t} name={striker} s={batsmanStats[striker]} on th={th} td={td} tdn={tdn} team={team} />}
+          {striker && <Row t={t} name={striker} s={batsmanStats[striker]} on td={td} tdn={tdn} team={team} />}
           {nonStriker && <Row t={t} name={nonStriker} s={batsmanStats[nonStriker]} td={td} tdn={tdn} team={team} />}
         </tbody>
         </table>

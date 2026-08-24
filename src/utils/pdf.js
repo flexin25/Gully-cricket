@@ -1,76 +1,125 @@
-import { ballsToOvers, calcSR, calcEconomy, getResult } from './calculations'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import { ballsToOvers, calcSR, calcEconomy, getResult, bowlerBalls, chasingMaxWickets, tossSummary } from './calculations'
+
+const NAVY = [17, 24, 39]
+
+/** Batting rows for one innings' batsmanStats map (name + dismissal, R, B, 4s, 6s, SR). */
+function battingRows(stats) {
+  return Object.entries(stats || {})
+    .filter(([, v]) => v.balls > 0 || v.runs > 0)
+    .map(([name, s]) => [
+      s.out && s.dismissal ? `${name}\n${s.dismissal}` : `${name}\nnot out`,
+      s.runs, s.balls, s.fours, s.sixes, calcSR(s.runs, s.balls),
+    ])
+}
+
+/** Bowling rows for one innings' bowlerStats map (name, O, R, W, ECO). */
+function bowlingRows(stats) {
+  return Object.entries(stats || {})
+    .filter(([, v]) => v.balls > 0 || v.overs > 0)
+    .map(([name, s]) => {
+      const tb = bowlerBalls(s)
+      return [name, ballsToOvers(tb), s.runs, s.wickets, calcEconomy(s.runs, tb)]
+    })
+}
 
 export function downloadPDF(match) {
   if (!match) return
 
-  const lines = []
-  const add = (s) => lines.push(s)
-  const hr = () => add('─'.repeat(52))
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+  const margin = 40
+  let y = 50
 
-  add(`MATCH SCORECARD — ${match.matchName}`)
-  add(`Date: ${new Date(match.date).toLocaleString()}`)
-  add(`Overs: ${match.totalOvers}`)
-  if (match.powerplayOvers) add(`Powerplay: ${match.powerplayOvers} overs`)
-  hr()
+  // ── Header ────────────────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.setTextColor(20)
+  doc.text(match.matchName || 'Match Scorecard', margin, y)
+  y += 18
 
-  // Result
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.setTextColor(110)
+  const meta = [
+    `Date: ${new Date(match.date).toLocaleString()}`,
+    `Overs: ${match.totalOvers}`,
+    match.powerplayOvers ? `Powerplay: ${match.powerplayOvers} ov` : null,
+  ].filter(Boolean).join('    ')
+  doc.text(meta, margin, y)
+  y += 18
+
+  // ── Result ────────────────────────────────────────────────────────────────
   const inn1 = match.innings1
   const inn2 = match.innings2
   if (inn1 && inn2) {
-    const res = getResult(
-      { ...inn1, teamName: inn1.teamName },
-      { ...inn2 },
-      match.totalOvers
-    )
-    add(`RESULT: ${res}`)
+    const res = getResult({ ...inn1 }, { ...inn2 }, chasingMaxWickets(match))
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(20)
+    doc.text(`Result: ${res}`, margin, y)
   }
-  hr()
 
-  // Inn 1
+  // ── Toss ──────────────────────────────────────────────────────────────────
+  // History entries carry the toss fields; older entries saved before the toss
+  // feature won't, and tossSummary returns '' for those.
+  const toss = tossSummary(match)
+  if (toss) {
+    y += 14
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(110)
+    doc.text(toss, margin, y)
+  }
+
+  const battingHead = [['Batter', 'R', 'B', '4s', '6s', 'SR']]
+  const bowlingHead = [['Bowler', 'O', 'R', 'W', 'ECO']]
+
+  const drawTable = (head, body) => {
+    const cols = head[0].length
+    const rows = body.length ? body : [Array.from({ length: cols }, (_, i) => (i === 0 ? '—' : ''))]
+    autoTable(doc, {
+      head,
+      body: rows,
+      startY: y + 8,
+      margin: { left: margin, right: margin },
+      theme: 'grid',
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 4, valign: 'middle', textColor: 30, lineColor: [220, 220, 220] },
+      headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { halign: 'center' },
+      columnStyles: { 0: { halign: 'left', cellWidth: 'auto' } },
+    })
+    y = doc.lastAutoTable.finalY
+  }
+
+  const drawSection = (title) => {
+    y += 24
+    const pageHeight = doc.internal.pageSize.getHeight()
+    if (y > pageHeight - 90) { doc.addPage(); y = 50 }
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(20)
+    doc.text(title, margin, y)
+  }
+
   if (inn1) {
-    add(`\n${inn1.teamName} — 1st Innings: ${inn1.score}/${inn1.wickets} (${ballsToOvers(inn1.balls)} ov)`)
-    hr()
-    add(`${'NAME'.padEnd(18)}${'R'.padStart(5)}${'B'.padStart(5)}${'4s'.padStart(5)}${'6s'.padStart(5)}${'SR'.padStart(8)}`)
-    Object.entries(inn1.batsmanStats || {}).filter(([, v]) => v.balls > 0 || v.runs > 0).forEach(([name, s]) => {
-      add(`${name.padEnd(18)}${String(s.runs).padStart(5)}${String(s.balls).padStart(5)}${String(s.fours).padStart(5)}${String(s.sixes).padStart(5)}${calcSR(s.runs, s.balls).padStart(8)}`)
-      if (s.out && s.dismissal) add(`  ${s.dismissal}`)
-    })
-    hr()
-    add(`${'BOWLER'.padEnd(18)}${'O'.padStart(5)}${'R'.padStart(5)}${'W'.padStart(5)}${'ECO'.padStart(8)}`)
-    Object.entries(inn1.bowlerStats || {}).filter(([, v]) => v.balls > 0 || v.overs > 0).forEach(([name, s]) => {
-      const tb = (s.overs || 0) * 6 + (s.balls || 0)
-      add(`${name.padEnd(18)}${ballsToOvers(tb).padStart(5)}${String(s.runs).padStart(5)}${String(s.wickets).padStart(5)}${calcEconomy(s.runs, tb).padStart(8)}`)
-    })
+    drawSection(`${inn1.teamName} — 1st Innings   ${inn1.score}/${inn1.wickets}  (${ballsToOvers(inn1.balls)} ov)`)
+    drawTable(battingHead, battingRows(inn1.batsmanStats))
+    drawTable(bowlingHead, bowlingRows(inn1.bowlerStats))
   }
-
-  // Inn 2
   if (inn2) {
-    add(`\n${inn2.teamName} — 2nd Innings: ${inn2.score}/${inn2.wickets} (${ballsToOvers(inn2.balls)} ov)`)
-    hr()
-    add(`${'NAME'.padEnd(18)}${'R'.padStart(5)}${'B'.padStart(5)}${'4s'.padStart(5)}${'6s'.padStart(5)}${'SR'.padStart(8)}`)
-    Object.entries(inn2.batsmanStats || {}).filter(([, v]) => v.balls > 0 || v.runs > 0).forEach(([name, s]) => {
-      add(`${name.padEnd(18)}${String(s.runs).padStart(5)}${String(s.balls).padStart(5)}${String(s.fours).padStart(5)}${String(s.sixes).padStart(5)}${calcSR(s.runs, s.balls).padStart(8)}`)
-      if (s.out && s.dismissal) add(`  ${s.dismissal}`)
-    })
-    hr()
-    // Inn2 bowling stats
-    if (inn2.bowlerStats) {
-      add(`${'BOWLER'.padEnd(18)}${'O'.padStart(5)}${'R'.padStart(5)}${'W'.padStart(5)}${'ECO'.padStart(8)}`)
-      Object.entries(inn2.bowlerStats).filter(([, v]) => v.balls > 0 || v.overs > 0).forEach(([name, s]) => {
-        const tb = (s.overs || 0) * 6 + (s.balls || 0)
-        add(`${name.padEnd(18)}${ballsToOvers(tb).padStart(5)}${String(s.runs).padStart(5)}${String(s.wickets).padStart(5)}${calcEconomy(s.runs, tb).padStart(8)}`)
-      })
-    }
+    drawSection(`${inn2.teamName} — 2nd Innings   ${inn2.score}/${inn2.wickets}  (${ballsToOvers(inn2.balls)} ov)`)
+    drawTable(battingHead, battingRows(inn2.batsmanStats))
+    drawTable(bowlingHead, bowlingRows(inn2.bowlerStats))
   }
-  hr()
-  add('\nGenerated by CricHub.in')
 
-  // Create text file download
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${match.matchName.replace(/[^a-z0-9]/gi, '_')}_scorecard.txt`
-  a.click()
-  URL.revokeObjectURL(url)
+  // ── Footer ────────────────────────────────────────────────────────────────
+  y = (doc.lastAutoTable?.finalY || y) + 26
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(140)
+  doc.text('Generated by CricHub.in', margin, y)
+
+  const safeName = (match.matchName || 'scorecard').replace(/[^a-z0-9]/gi, '_')
+  doc.save(`${safeName}_scorecard.pdf`)
 }

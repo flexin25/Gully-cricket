@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { isLegalDelivery } from '../utils/calculations'
 
 const defaultBatsmanStat = () => ({ runs: 0, balls: 0, fours: 0, sixes: 0, out: false, dismissal: '', fielder: '' })
-const defaultBowlerStat = () => ({ overs: 0, balls: 0, runs: 0, wickets: 0, maidens: 0, dotBalls: 0 })
+const defaultBowlerStat = () => ({ overs: 0, balls: 0, runs: 0, wickets: 0, dotBalls: 0 })
 
 const initialState = {
   // Setup
@@ -15,6 +15,16 @@ const initialState = {
   powerplayOvers: 0,
   tossWinner: 'A',
   tossDecision: 'bat',
+  // How the toss was settled. `tossWinner` is DERIVED from the call vs the
+  // result when tossMethod === 'coin' (see TossCoin.jsx); 'manual' means the
+  // teams tossed a real coin themselves and entered the outcome directly, so
+  // tossCall/tossResult stay null.
+  // Set once at setup and never touched by addBall — deliberately NOT part of
+  // the undo snapshot, and not stripped by partialize (must survive a reload).
+  tossMethod: 'coin',   // 'coin' | 'manual'
+  tossCaller: 'A',      // which side called it
+  tossCall: null,       // 'heads' | 'tails' — what they called
+  tossResult: null,     // 'heads' | 'tails' — what the coin landed on
 
   // Match phase: 'setup' | 'innings1' | 'innings2' | 'done'
   phase: 'setup',
@@ -37,6 +47,7 @@ const initialState = {
   batsmanStats: {},
   bowlerStats: {},
   ballsHistory: [],
+  undoStack: [],
 
   // UI prompts
   needNewBatsman: false,
@@ -60,7 +71,7 @@ const useMatchStore = create(
     (set, get) => ({
       ...initialState,
 
-      // ─── Match History (separate key) ────────────────────────────────────────
+      // ─── Match History (persisted in the same key as the live match state) ────
       matchHistory: [],
 
       saveMatchToHistory: () => {
@@ -89,6 +100,13 @@ const useMatchStore = create(
               bowlerStats: s.bowlerStats,
             },
             battingTeam: s.battingTeam,
+            // Same field names as the live state, so tossSummary() reads either.
+            tossWinner: s.tossWinner,
+            tossDecision: s.tossDecision,
+            tossMethod: s.tossMethod,
+            tossCaller: s.tossCaller,
+            tossCall: s.tossCall,
+            tossResult: s.tossResult,
           }
           return { matchHistory: [entry, ...state.matchHistory] }
         })
@@ -100,7 +118,14 @@ const useMatchStore = create(
       clearHistory: () => set({ matchHistory: [] }),
 
       // ─── Setup ───────────────────────────────────────────────────────────────
-      setupMatch: ({ matchName, teamA, teamB, totalOvers, powerplayOvers, toss, decision }) => {
+      // `toss` is the winning side ('A'|'B') and `decision` is what they chose.
+      // With a coin flip the caller passes the raw ritual too (method/caller/
+      // call/result) so the toss can be replayed and printed later; `toss` itself
+      // is derived from call vs result by TossCoin.jsx.
+      setupMatch: ({
+        matchName, teamA, teamB, totalOvers, powerplayOvers, toss, decision,
+        tossMethod = 'coin', tossCaller = 'A', tossCall = null, tossResult = null,
+      }) => {
         const batsmanStats = {}
         teamA.players.forEach((p) => { batsmanStats[p] = defaultBatsmanStat() })
         teamB.players.forEach((p) => { batsmanStats[p] = defaultBatsmanStat() })
@@ -116,6 +141,7 @@ const useMatchStore = create(
           powerplayOvers: powerplayOvers || 0,
           tossWinner: toss,
           tossDecision: decision,
+          tossMethod, tossCaller, tossCall, tossResult,
           battingTeam, bowlingTeam,
           batsmanStats,
           bowlerStats: {},
@@ -197,8 +223,27 @@ const useMatchStore = create(
           score, wickets, balls, totalBalls, totalOvers,
           currentBatsmen, currentBowler, batsmanStats, bowlerStats,
           extras, ballsHistory, phase, battingTeam, bowlingTeam,
-          teamA, teamB, innings1, powerplayOvers,
+          teamA, teamB, innings1,
         } = state
+
+        // Free hit: only a run out can dismiss the batsman — ignore any other wicket.
+        const isRunOut = dismissal.startsWith('Run Out')
+        if (state.isFreeHit && isWicket && !isRunOut) {
+          isWicket = false
+          dismissal = ''
+        }
+
+        // Snapshot pre-ball state so undoBall can restore it exactly (survives an innings switch).
+        const snapshot = {
+          score, wickets, balls, totalBalls, extras,
+          batsmanStats, bowlerStats, currentBatsmen, currentBowler,
+          ballsHistory, phase, battingTeam, bowlingTeam, innings1,
+          isFreeHit: state.isFreeHit,
+          needNewBatsman: state.needNewBatsman,
+          needNewBowler: state.needNewBowler,
+          newBatsmanSlot: state.newBatsmanSlot,
+        }
+        const newUndoStack = [...(state.undoStack || []), snapshot].slice(-30)
 
         const legal = isLegalDelivery(extraType)
         const newBalls = legal ? balls + 1 : balls
@@ -243,7 +288,7 @@ const useMatchStore = create(
           const bw = { ...newBowlerStats[currentBowler] }
           if (legal) bw.balls++
           if (extraType !== 'bye' && extraType !== 'legBye') bw.runs += runsToAdd
-          if (isWicket) bw.wickets++
+          if (isWicket && !isRunOut) bw.wickets++
           if (legal && runs === 0 && !extraType) bw.dotBalls++
           if (bw.balls === 6) {
             bw.overs++
@@ -293,11 +338,12 @@ const useMatchStore = create(
             extras: newExtras,
             batsmanStats: newBatsmanStats,
             bowlerStats: newBowlerStats,
-            currentBatsmen: { striker: newStriker, nonStriker: newNonStriker },
+            currentBatsmen: updatedBatsmen,
             ballsHistory: newHistory,
             phase: 'done',
             needNewBatsman: false, needNewBowler: false,
             isFreeHit: newIsFreeHit,
+            undoStack: newUndoStack,
           })
           return
         }
@@ -336,6 +382,7 @@ const useMatchStore = create(
               newBatsmanSlot: null,
               breaksTaken: 0,
               isFreeHit: false,
+              undoStack: newUndoStack,
             })
           } else {
             set({
@@ -346,11 +393,12 @@ const useMatchStore = create(
               extras: newExtras,
               batsmanStats: newBatsmanStats,
               bowlerStats: newBowlerStats,
-              currentBatsmen: { striker: newStriker, nonStriker: newNonStriker },
+              currentBatsmen: updatedBatsmen,
               ballsHistory: newHistory,
               phase: 'done',
               needNewBatsman: false, needNewBowler: false,
               isFreeHit: newIsFreeHit,
+              undoStack: newUndoStack,
             })
           }
           return
@@ -374,21 +422,16 @@ const useMatchStore = create(
           needNewBowler: needBowler,
           newBatsmanSlot: needBatsman ? slot : null,
           isFreeHit: newIsFreeHit,
+          undoStack: newUndoStack,
         })
       },
 
-      // ─── Undo ─────────────────────────────────────────────────────────────────
+      // ─── Undo (restore the pre-ball snapshot) ──────────────────────────────────
       undoBall: () => {
-        const { ballsHistory, score, wickets, balls, totalBalls } = get()
-        if (!ballsHistory.length) return
-        const last = ballsHistory[ballsHistory.length - 1]
-        set({
-          score: Math.max(0, score - last.runsToAdd),
-          wickets: last.isWicket ? Math.max(0, wickets - 1) : wickets,
-          balls: last.legal ? Math.max(0, balls === 0 ? 5 : balls - 1) : balls,
-          totalBalls: last.legal ? Math.max(0, totalBalls - 1) : totalBalls,
-          ballsHistory: ballsHistory.slice(0, -1),
-        })
+        const { undoStack } = get()
+        if (!undoStack || !undoStack.length) return
+        const prev = undoStack[undoStack.length - 1]
+        set({ ...prev, undoStack: undoStack.slice(0, -1) })
       },
 
       // ─── Reset ────────────────────────────────────────────────────────────────
@@ -397,9 +440,15 @@ const useMatchStore = create(
         set({ ...initialState, matchHistory })
       },
     }),
-    { 
+    {
       name: 'crichub-match-v2',
-      storage: createJSONStorage(() => sessionStorage)
+      storage: createJSONStorage(() => localStorage),
+      // Persist match state + history; skip transient UI/timer state and the undo stack.
+      partialize: (state) => {
+        // eslint-disable-next-line no-unused-vars
+        const { pendingWicket, breakActive, breakEndTime, undoStack, ...rest } = state
+        return rest
+      },
     }
   )
 )

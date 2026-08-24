@@ -1,6 +1,6 @@
 import useMatchStore from '../store/useMatchStore'
 import { useTheme } from '../store/useThemeStore'
-import { ballsToOvers, calcCRR, calcRRR } from '../utils/calculations'
+import { ballsToOvers, calcCRR, calcRRR, tossSummaryShort } from '../utils/calculations'
 
 export default function Scoreboard() {
   const t = useTheme()
@@ -8,11 +8,13 @@ export default function Scoreboard() {
     score, wickets, totalBalls, totalOvers, powerplayOvers,
     battingTeam, teamA, teamB,
     phase, innings1, ballsHistory, isFreeHit,
+    tossWinner, tossDecision,
   } = useMatchStore()
 
   const batting = battingTeam === 'A' ? teamA : teamB
   const oversStr = ballsToOvers(totalBalls)
   const crr = calcCRR(score, totalBalls)
+  const tossLine = tossSummaryShort({ teamA, teamB, tossWinner, tossDecision })
 
   const isSecondInnings = phase === 'innings2'
   const target = innings1 ? innings1.score + 1 : null
@@ -75,10 +77,16 @@ export default function Scoreboard() {
       </div>
 
       {/* Score */}
-      <div style={{ color: t.accent, fontSize: '3.5rem', fontWeight: 700, lineHeight: 1, margin: '4px 0' }}>
-        {score}<span style={{ color: t.muted, fontSize: '2rem', fontWeight: 400 }}>/{wickets}</span>
+      {/* px, not rem: html is now at the browser default so rem here would rescale */}
+      <div style={{ color: t.accent, fontSize: 49, fontWeight: 700, lineHeight: 1, margin: '4px 0' }}>
+        {score}<span style={{ color: t.muted, fontSize: 28, fontWeight: 400 }}>/{wickets}</span>
       </div>
-      <div style={{ color: t.muted, fontSize: 13, marginBottom: 8 }}>({oversStr} ov)</div>
+      <div style={{ color: t.muted, fontSize: 13, marginBottom: tossLine ? 2 : 8 }}>({oversStr} ov)</div>
+      {tossLine && (
+        <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+          {tossLine}
+        </div>
+      )}
 
       {/* Stats row */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: 20, fontSize: 12, marginBottom: 8 }}>

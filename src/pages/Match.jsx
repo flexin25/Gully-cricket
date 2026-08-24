@@ -9,7 +9,7 @@ import BatsmanStats from '../components/BatsmanStats'
 import BowlerStats from '../components/BowlerStats'
 import BreakTimer from '../components/BreakTimer'
 
-const LAYOUT = { maxWidth: 480, margin: '0 auto', padding: '0 20px' }
+const LAYOUT = { maxWidth: 480, margin: '0 auto', paddingLeft: 20, paddingRight: 20 }
 
 export default function Match() {
   const t = useTheme()

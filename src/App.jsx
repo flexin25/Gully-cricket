@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
-import { useTheme } from './store/useThemeStore'
+import { useTheme, useThemeEffect } from './store/useThemeStore'
 import Navbar from './components/Navbar'
 import Home from './pages/Home'
 import About from './pages/About'
@@ -10,6 +10,7 @@ import MatchHistory from './pages/MatchHistory'
 
 function Layout() {
   const t = useTheme()
+  useThemeEffect() // projects the active theme onto :root as CSS variables
   const location = useLocation()
   // Hide navbar during active match scoring
   const hideNav = location.pathname === '/match'

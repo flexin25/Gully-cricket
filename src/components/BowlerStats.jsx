@@ -1,6 +1,6 @@
 import useMatchStore from '../store/useMatchStore'
 import { useTheme } from '../store/useThemeStore'
-import { ballsToOvers, calcEconomy } from '../utils/calculations'
+import { ballsToOvers, calcEconomy, bowlerBalls } from '../utils/calculations'
 
 export default function BowlerStats() {
   const t = useTheme()
@@ -13,7 +13,7 @@ export default function BowlerStats() {
   const roleStr = isC ? ' (c)' : isVC ? ' (vc)' : ''
 
   const stats = bowlerStats[currentBowler] || { balls: 0, overs: 0, runs: 0, wickets: 0 }
-  const totalB = (stats.overs * 6) + stats.balls
+  const totalB = bowlerBalls(stats)
   const oversStr = ballsToOvers(totalB)
   const economy = calcEconomy(stats.runs, totalB)
 

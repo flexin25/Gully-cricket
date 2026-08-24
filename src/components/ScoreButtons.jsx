@@ -11,7 +11,6 @@ const EXTRAS = [
   { label: 'LB', key: 'legBye' },
 ]
 const DISMISSALS = ['Bowled', 'Caught', 'LBW', 'Run Out', 'Stumped', 'Hit Wicket']
-const NEEDS_FIELDER = ['Caught', 'Run Out', 'Stumped']
 
 export default function ScoreButtons() {
   const t = useTheme()
@@ -19,15 +18,16 @@ export default function ScoreButtons() {
     addBall, undoBall, ballsHistory,
     needNewBatsman, needNewBowler, breakActive,
     pendingWicket, startWicket, confirmWicket, cancelWicket,
-    bowlingTeam, teamA, teamB,
+    bowlingTeam, teamA, teamB, isFreeHit,
   } = useMatchStore()
 
   const [pendingExtra, setPendingExtra] = useState(null)
   const [showWicketMenu, setShowWicketMenu] = useState(false)
-  const [fielderSearch, setFielderSearch] = useState('')
 
   const blocked = needNewBatsman || needNewBowler || breakActive
   const bowlingPlayers = (bowlingTeam === 'A' ? teamA : teamB).players
+  // On a free hit only a run out can dismiss the striker.
+  const dismissalOptions = isFreeHit ? ['Run Out'] : DISMISSALS
 
   const baseBtn = {
     background: 'transparent', border: `1px solid ${t.border}`,
@@ -85,7 +85,12 @@ export default function ScoreButtons() {
           </button>
           {showWicketMenu && (
             <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, zIndex: 50, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 4, marginBottom: 2, overflow: 'hidden' }}>
-              {DISMISSALS.map((d) => (
+              {isFreeHit && (
+                <div style={{ padding: '6px 10px', fontSize: 10, color: t.yellow, borderBottom: `1px solid ${t.border}`, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Free hit — run out only
+                </div>
+              )}
+              {dismissalOptions.map((d) => (
                 <button key={d} onClick={() => { startWicket(d); setShowWicketMenu(false) }}
                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', borderBottom: `1px solid ${t.border}`, color: t.text, fontFamily: 'inherit', fontSize: 12, cursor: 'pointer' }}
                   onMouseEnter={e => e.currentTarget.style.background = t.card}
