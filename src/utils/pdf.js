@@ -14,13 +14,14 @@ function battingRows(stats) {
     ])
 }
 
-/** Bowling rows for one innings' bowlerStats map (name, O, R, W, ECO). */
+/** Bowling rows for one innings' bowlerStats map (name, O, M, R, W, ECO). */
 function bowlingRows(stats) {
   return Object.entries(stats || {})
     .filter(([, v]) => v.balls > 0 || v.overs > 0)
     .map(([name, s]) => {
       const tb = bowlerBalls(s)
-      return [name, ballsToOvers(tb), s.runs, s.wickets, calcEconomy(s.runs, tb)]
+      // `|| 0` — matches saved before maidens were tracked have no such field.
+      return [name, ballsToOvers(tb), s.maidens || 0, s.runs, s.wickets, calcEconomy(s.runs, tb)]
     })
 }
 
@@ -73,7 +74,7 @@ export function downloadPDF(match) {
   }
 
   const battingHead = [['Batter', 'R', 'B', '4s', '6s', 'SR']]
-  const bowlingHead = [['Bowler', 'O', 'R', 'W', 'ECO']]
+  const bowlingHead = [['Bowler', 'O', 'M', 'R', 'W', 'ECO']]
 
   const drawTable = (head, body) => {
     const cols = head[0].length

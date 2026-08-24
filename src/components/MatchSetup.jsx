@@ -4,6 +4,21 @@ import { useTheme } from '../store/useThemeStore'
 import { Plus, Trash2 } from 'lucide-react'
 import TossCoin from './TossCoin'
 
+/** Minimum named players per side. maxWickets is players-1, so 3 is the
+ *  smallest roster that still gives a side more than one wicket to lose. */
+const MIN_PLAYERS = 3
+
+/** Team names allow letters, digits and spaces and must contain at least one
+ *  letter — "Gully XI 11" passes, "12345" and "Team@#!" do not. */
+const TEAM_NAME_ALLOWED = /^[A-Za-z0-9 ]+$/
+function teamNameError(name) {
+  const v = name.trim()
+  if (!v) return ''  // blank is allowed; it falls back to "Team A" / "Team B"
+  if (!TEAM_NAME_ALLOWED.test(v)) return 'No special characters — letters, numbers and spaces only.'
+  if (!/[A-Za-z]/.test(v)) return 'Needs letters, not just numbers.'
+  return ''
+}
+
 export default function MatchSetup() {
   const t = useTheme()
   const setupMatch = useMatchStore((s) => s.setupMatch)
@@ -32,15 +47,18 @@ export default function MatchSetup() {
     if (team === 'A') setPlayersA(playersA.filter((_, i) => i !== idx))
     else setPlayersB(playersB.filter((_, i) => i !== idx))
   }
-  /** Both sides need 2+ named players, else maxWickets collapses to 1. */
+  /** Both sides need MIN_PLAYERS named players, else maxWickets collapses. */
   const rosterReady = () =>
-    playersA.filter(Boolean).length >= 2 && playersB.filter(Boolean).length >= 2
+    playersA.filter(Boolean).length >= MIN_PLAYERS && playersB.filter(Boolean).length >= MIN_PLAYERS
+
+  const errA = teamNameError(teamAName)
+  const errB = teamNameError(teamBName)
+  const namesOk = !errA && !errB
+
+  const shortfall = (players) => MIN_PLAYERS - players.filter(Boolean).length
 
   const goToToss = () => {
-    if (!rosterReady()) {
-      alert('Each team needs at least 2 named players to start a match.')
-      return
-    }
+    if (!rosterReady()) return  // the inline warning below already explains why
     setStep(3)
   }
 
@@ -48,8 +66,7 @@ export default function MatchSetup() {
   const handleStart = (toss) => {
     const namedA = playersA.filter(Boolean)
     const namedB = playersB.filter(Boolean)
-    if (namedA.length < 2 || namedB.length < 2) {
-      alert('Each team needs at least 2 named players to start a match.')
+    if (namedA.length < MIN_PLAYERS || namedB.length < MIN_PLAYERS) {
       setStep(2)
       return
     }
@@ -94,9 +111,16 @@ export default function MatchSetup() {
           <input style={inp} placeholder="e.g. Finals — Sunday League" value={matchName} onChange={e => setMatchName(e.target.value)} />
 
           <Lbl t={t}>team a</Lbl>
-          <input style={inp} placeholder="e.g. Street Warriors" value={teamAName} onChange={e => setTeamAName(e.target.value)} />
+          <input style={{ ...inp, borderColor: errA ? t.red : t.border }} placeholder="e.g. Street Warriors"
+            value={teamAName} onChange={e => setTeamAName(e.target.value)}
+            aria-invalid={!!errA} aria-describedby={errA ? 'err-team-a' : undefined} />
+          {errA && <Warn t={t} id="err-team-a">{errA}</Warn>}
+
           <Lbl t={t}>team b</Lbl>
-          <input style={inp} placeholder="e.g. Gully Kings" value={teamBName} onChange={e => setTeamBName(e.target.value)} />
+          <input style={{ ...inp, borderColor: errB ? t.red : t.border }} placeholder="e.g. Gully Kings"
+            value={teamBName} onChange={e => setTeamBName(e.target.value)}
+            aria-invalid={!!errB} aria-describedby={errB ? 'err-team-b' : undefined} />
+          {errB && <Warn t={t} id="err-team-b">{errB}</Warn>}
 
           <Lbl t={t}>overs per innings</Lbl>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4 }}>
@@ -114,8 +138,8 @@ export default function MatchSetup() {
             ))}
           </div>
 
-          <button className="btn-t" onClick={() => setStep(2)}
-            style={{ marginTop: 20, width: '100%', background: 'none', border: `1px solid ${t.accent}`, borderRadius: 4, color: t.accent, padding: '11px', fontSize: 13, fontWeight: 600 }}>
+          <button id="btn-next-players" className="btn-t" disabled={!namesOk} onClick={() => { if (namesOk) setStep(2) }}
+            style={{ marginTop: 20, width: '100%', background: 'none', border: `1px solid ${namesOk ? t.accent : t.border}`, borderRadius: 4, color: namesOk ? t.accent : t.muted, padding: '11px', fontSize: 13, fontWeight: 600 }}>
             Next: Players →
           </button>
         </div>
@@ -147,7 +171,7 @@ export default function MatchSetup() {
                           style={{ background: viceCaptains[team] === p ? t.accent : 'transparent', color: viceCaptains[team] === p ? t.bg : t.muted, border: `1px solid ${t.border}`, borderRadius: 3, padding: '2px 4px', fontSize: 9, fontWeight: 700, cursor: 'pointer' }}>VC</button>
                       </div>
                     )}
-                    {players.length > 2 && (
+                    {players.length > MIN_PLAYERS && (
                       <button onClick={() => removePlayer(team, idx)} style={{ background: 'none', border: 'none', color: t.muted, cursor: 'pointer', padding: '0 4px' }}>
                         <Trash2 size={13} />
                       </button>
@@ -158,12 +182,18 @@ export default function MatchSetup() {
                   style={{ background: 'none', border: 'none', color: t.muted, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, textAlign: 'left', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Plus size={12} /> add
                 </button>
+                {shortfall(players) > 0 && (
+                  <Warn t={t}>
+                    Needs {shortfall(players)} more {shortfall(players) === 1 ? 'name' : 'names'} — minimum {MIN_PLAYERS} players per team.
+                  </Warn>
+                )}
               </div>
             </div>
           ))}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginTop: 20 }}>
             <button className="btn-t" onClick={() => setStep(1)} style={{ background: 'none', border: `1px solid ${t.border}`, borderRadius: 4, color: t.muted, padding: '10px', fontSize: 12 }}>← Back</button>
-            <button className="btn-t" onClick={goToToss} style={{ background: 'none', border: `1px solid ${t.accent}`, borderRadius: 4, color: t.accent, padding: '10px', fontSize: 13, fontWeight: 600 }}>Toss →</button>
+            <button id="btn-to-toss" className="btn-t" disabled={!rosterReady()} onClick={goToToss}
+              style={{ background: 'none', border: `1px solid ${rosterReady() ? t.accent : t.border}`, borderRadius: 4, color: rosterReady() ? t.accent : t.muted, padding: '10px', fontSize: 13, fontWeight: 600 }}>Toss →</button>
           </div>
         </div>
       )}
@@ -187,5 +217,15 @@ export default function MatchSetup() {
 function Lbl({ t, children }) {
   return (
     <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5, marginTop: 14 }}>▸ {children}</div>
+  )
+}
+
+/** Inline validation notice. role="alert" so a screen reader announces it as
+ *  soon as it appears, rather than the alert() dialogs this replaced. */
+function Warn({ t, id, children }) {
+  return (
+    <div id={id} role="alert" style={{ color: t.red, fontSize: 11, lineHeight: 1.45, marginTop: 5, display: 'flex', gap: 5 }}>
+      <span aria-hidden="true">⚠</span><span>{children}</span>
+    </div>
   )
 }

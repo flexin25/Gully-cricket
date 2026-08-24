@@ -45,6 +45,36 @@ export function isLegalDelivery(extraType) {
   return !extraType || extraType === 'bye' || extraType === 'legBye'
 }
 
+/**
+ * Runs charged to the bowler for one delivery. Byes and leg-byes are batting
+ * extras, not the bowler's fault, so they don't count against the bowler (and
+ * an over of only byes can still be a maiden). Wides and no-balls DO count.
+ */
+export function bowlerChargedRuns(ball) {
+  if (ball.extraType === 'bye' || ball.extraType === 'legBye') return 0
+  return ball.runsToAdd || 0
+}
+
+/**
+ * Was the over that just finished a maiden — i.e. no runs charged to the bowler?
+ * Call at end-of-over with the full ballsHistory (whose last entry is the 6th
+ * legal ball). Walks back through this over's deliveries, including any leading
+ * wide/no-ball, and stops at the previous over's final legal ball. A completed
+ * over never has trailing illegal deliveries, so contiguous illegals sitting
+ * before the sixth-counted legal ball belong to this over and are included.
+ */
+export function lastOverWasMaiden(ballsHistory) {
+  let legalSeen = 0
+  let runs = 0
+  for (let i = ballsHistory.length - 1; i >= 0; i--) {
+    const b = ballsHistory[i]
+    if (b.legal && legalSeen === 6) break  // reached the previous over
+    if (b.legal) legalSeen++
+    runs += bowlerChargedRuns(b)
+  }
+  return legalSeen === 6 && runs === 0
+}
+
 /** Max wickets the chasing (2nd-innings) team can lose = squad size − 1 (gully last-man rule) */
 export function chasingMaxWickets(match) {
   const chasingName = match?.innings2?.teamName

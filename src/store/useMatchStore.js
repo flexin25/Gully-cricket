@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { isLegalDelivery } from '../utils/calculations'
+import { isLegalDelivery, lastOverWasMaiden } from '../utils/calculations'
 
 const defaultBatsmanStat = () => ({ runs: 0, balls: 0, fours: 0, sixes: 0, out: false, dismissal: '', fielder: '' })
-const defaultBowlerStat = () => ({ overs: 0, balls: 0, runs: 0, wickets: 0, dotBalls: 0 })
+const defaultBowlerStat = () => ({ overs: 0, balls: 0, runs: 0, wickets: 0, dotBalls: 0, maidens: 0 })
 
 const initialState = {
   // Setup
@@ -43,6 +43,11 @@ const initialState = {
 
   currentBatsmen: { striker: null, nonStriker: null },
   currentBowler: null,
+  // Who bowled the over that just finished. Cricket's one-over-at-a-time rule:
+  // they are ineligible for the very next over, but free again the over after.
+  // Set at end-of-over, cleared per innings, and part of the undo snapshot
+  // because undoing across an over boundary has to un-retire that bowler.
+  lastOverBowler: null,
 
   batsmanStats: {},
   bowlerStats: {},
@@ -186,7 +191,14 @@ const useMatchStore = create(
       },
 
       // ─── Select new bowler ────────────────────────────────────────────────────
+      // Enforces the no-consecutive-overs rule at the data layer, not just in the
+      // picker, so a stale click or a restored session can't sneak the same
+      // bowler through. Waived only if the side has nobody else to turn to.
       selectNewBowler: (name) => {
+        const { lastOverBowler, bowlingTeam, teamA, teamB } = get()
+        const squad = (bowlingTeam === 'A' ? teamA : teamB).players || []
+        const hasAlternative = squad.some((p) => p !== lastOverBowler)
+        if (name === lastOverBowler && hasAlternative) return
         const stats = { ...get().bowlerStats }
         if (!stats[name]) stats[name] = defaultBowlerStat()
         set({ currentBowler: name, bowlerStats: stats, needNewBowler: false })
@@ -223,7 +235,7 @@ const useMatchStore = create(
           score, wickets, balls, totalBalls, totalOvers,
           currentBatsmen, currentBowler, batsmanStats, bowlerStats,
           extras, ballsHistory, phase, battingTeam, bowlingTeam,
-          teamA, teamB, innings1,
+          teamA, teamB, innings1, lastOverBowler,
         } = state
 
         // Free hit: only a run out can dismiss the batsman — ignore any other wicket.
@@ -236,7 +248,7 @@ const useMatchStore = create(
         // Snapshot pre-ball state so undoBall can restore it exactly (survives an innings switch).
         const snapshot = {
           score, wickets, balls, totalBalls, extras,
-          batsmanStats, bowlerStats, currentBatsmen, currentBowler,
+          batsmanStats, bowlerStats, currentBatsmen, currentBowler, lastOverBowler,
           ballsHistory, phase, battingTeam, bowlingTeam, innings1,
           isFreeHit: state.isFreeHit,
           needNewBatsman: state.needNewBatsman,
@@ -316,6 +328,15 @@ const useMatchStore = create(
         const histEntry = { runs, extraType, isWicket, dismissal, legal, runsToAdd }
         const newHistory = [...ballsHistory, histEntry]
 
+        // Maiden over — credited once the sixth legal ball lands with nothing
+        // charged to the bowler. Read off the history rather than a running
+        // counter so undo needs no extra bookkeeping: rolling the ball back
+        // restores the whole bowlerStats object from the snapshot.
+        if (isEndOfOver && currentBowler && newBowlerStats[currentBowler] && lastOverWasMaiden(newHistory)) {
+          const bw = newBowlerStats[currentBowler]
+          newBowlerStats[currentBowler] = { ...bw, maidens: (bw.maidens || 0) + 1 }
+        }
+
         const battingTeamObj = battingTeam === 'A' ? teamA : teamB
         const maxWickets = Math.max(1, battingTeamObj.players.length - 1)
         const allOut = isWicket && (wickets + 1) >= maxWickets
@@ -380,6 +401,7 @@ const useMatchStore = create(
               needNewBatsman: true,
               needNewBowler: true,
               newBatsmanSlot: null,
+              lastOverBowler: null,
               breaksTaken: 0,
               isFreeHit: false,
               undoStack: newUndoStack,
@@ -421,6 +443,9 @@ const useMatchStore = create(
           needNewBatsman: needBatsman,
           needNewBowler: needBowler,
           newBatsmanSlot: needBatsman ? slot : null,
+          // Retire the current bowler from the next over only (they may return
+          // the over after). Untouched mid-over so it survives until the changeover.
+          lastOverBowler: isEndOfOver ? currentBowler : lastOverBowler,
           isFreeHit: newIsFreeHit,
           undoStack: newUndoStack,
         })

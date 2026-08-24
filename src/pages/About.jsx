@@ -11,6 +11,7 @@ const USPS = [
 ]
 
 const FEATURES = [
+  { icon: '🪙', title: 'Real Coin Toss', desc: 'Call heads or tails and the app flips a genuinely random coin. The winner elects to bat or bowl.', isNew: true },
   { icon: '📊', title: 'Ball-by-Ball', desc: 'Score every delivery with runs, extras, wickets, and fielder details.' },
   { icon: '📈', title: 'Live CRR & RRR', desc: 'Automatic run rate and required rate calculations in real time.' },
   { icon: '⏪', title: 'Undo Support', desc: 'Made a mistake? Undo the last ball instantly with one tap.' },
@@ -18,7 +19,7 @@ const FEATURES = [
   { icon: '🎯', title: 'Powerplay', desc: 'Set custom powerplay overs per match for field restriction tracking.' },
   { icon: '⏸', title: 'Timeout / Breaks', desc: 'Strategic timeout with a 2-minute timer. Resume when ready.' },
   { icon: '🏆', title: 'Match History', desc: 'All finished matches are saved locally. Download as PDF anytime.' },
-  { icon: '🎨', title: 'Theme Selector', desc: 'Choose from 5 curated dark themes to match your style.' },
+  { icon: '🎨', title: 'Theme Selector', desc: 'Six themes — the new high-contrast Daylight for sunlight, plus 5 curated darks.' },
 ]
 
 export default function About() {
@@ -55,8 +56,30 @@ export default function About() {
         <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>▸ Features</div>
         <div className="grid-2" style={{ marginBottom: 30 }}>
           {FEATURES.map((f) => (
-            <div key={f.title} style={{ border: `1px solid ${t.border}`, borderRadius: 6, padding: '12px', background: t.card }}>
-              <div style={{ fontSize: 20, marginBottom: 4 }}>{f.icon}</div>
+            <div key={f.title} style={{
+              // The new feature takes the full row: it reads as a banner, and it
+              // also keeps the remaining 8 cards in even pairs.
+              gridColumn: f.isNew ? '1 / -1' : undefined,
+              // color-mix rather than hex-alpha concatenation — an 8% tint has to
+              // work over the light Daylight card as well as the dark ones.
+              border: f.isNew
+                ? '1px solid color-mix(in oklab, var(--primary) 45%, var(--border))'
+                : `1px solid ${t.border}`,
+              background: f.isNew
+                ? 'color-mix(in oklab, var(--primary) 8%, var(--card))'
+                : t.card,
+              borderRadius: 6, padding: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 20 }}>{f.icon}</span>
+                {f.isNew && (
+                  <span style={{
+                    background: 'var(--primary)', color: 'var(--primary-foreground)',
+                    fontSize: 9, fontWeight: 700, letterSpacing: '0.1em',
+                    padding: '2px 6px', borderRadius: 999,
+                  }}>NEW</span>
+                )}
+              </div>
               <div style={{ color: t.text, fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{f.title}</div>
               <div style={{ color: t.muted, fontSize: 11, lineHeight: 1.4 }}>{f.desc}</div>
             </div>

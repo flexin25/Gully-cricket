@@ -17,7 +17,7 @@ export default function Match() {
   const {
     phase, needNewBatsman, needNewBowler,
     battingTeam, bowlingTeam, teamA, teamB,
-    currentBatsmen, currentBowler,
+    currentBatsmen, currentBowler, lastOverBowler,
     batsmanStats,
     setOpeningPlayers, selectNewBatsman, selectNewBowler,
     matchName,
@@ -96,21 +96,44 @@ export default function Match() {
 
   // ── New bowler ──
   if (needNewBowler) {
-    const eligible = bowlingObj.players.filter(p => p !== currentBowler)
-    const pool = eligible.length > 0 ? eligible : bowlingObj.players
+    // One bowler can't bowl two overs on the trot. They're shown but disabled,
+    // with the reason spelled out below the list — hiding them silently reads
+    // as a missing player.
+    const squad = bowlingObj.players
+    const eligible = squad.filter(p => p !== lastOverBowler)
+    // Nobody else to turn to (a one-bowler side) — the rule has to yield.
+    const ruleApplies = eligible.length > 0
     return (
       <div style={{ background: t.bg, color: t.text, minHeight: '100vh' }}>
         <Header t={t} title="END OF OVER — BOWLER" navigate={navigate} matchName={matchName} />
         <div style={{ ...LAYOUT, paddingTop: 4 }}>
           <Lbl t={t}>select next bowler</Lbl>
-          {pool.map(p => (
-            <button key={p} className="btn-t" onClick={() => selectNewBowler(p)}
-              style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: 4, background: 'none', border: `1px solid ${t.border}`, borderRadius: 4, color: t.text, fontFamily: 'inherit', fontSize: 13, padding: '10px', cursor: 'pointer' }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = t.accent}
-              onMouseLeave={e => e.currentTarget.style.borderColor = t.border}>
-              ▹ {p}
-            </button>
-          ))}
+          {squad.map(p => {
+            const resting = ruleApplies && p === lastOverBowler
+            return (
+              <button key={p} className="btn-t" disabled={resting}
+                onClick={() => { if (!resting) selectNewBowler(p) }}
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  width: '100%', textAlign: 'left', marginBottom: 4, background: 'none',
+                  border: `1px solid ${t.border}`, borderRadius: 4,
+                  color: resting ? t.muted : t.text,
+                  fontFamily: 'inherit', fontSize: 13, padding: '10px',
+                  cursor: resting ? 'not-allowed' : 'pointer',
+                }}
+                onMouseEnter={e => { if (!resting) e.currentTarget.style.borderColor = t.accent }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = t.border }}>
+                <span>▹ {p}</span>
+                {resting && <span style={{ fontSize: 10, letterSpacing: '0.06em' }}>BOWLED LAST OVER</span>}
+              </button>
+            )
+          })}
+          {ruleApplies && lastOverBowler && (
+            <Note t={t}>
+              {lastOverBowler} bowled the last over and has to sit this one out — they can come
+              back the over after.
+            </Note>
+          )}
         </div>
       </div>
     )
@@ -153,6 +176,21 @@ function Header({ t, title, navigate, matchName }) {
 
 function Lbl({ t, children }) {
   return <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '12px 0 6px' }}>▸ {children}</div>
+}
+
+/** Inline rule explanation. role="note" — it's context, not an error, so it
+ *  shouldn't interrupt a screen reader the way role="alert" would. */
+function Note({ t, children }) {
+  return (
+    <div role="note" style={{
+      color: t.muted, fontSize: 11, lineHeight: 1.45, marginTop: 8,
+      display: 'flex', gap: 5, alignItems: 'flex-start',
+      border: `1px solid ${t.border}`, borderRadius: 4, padding: '8px 10px',
+      background: 'color-mix(in oklab, var(--primary) 6%, var(--card))',
+    }}>
+      <span aria-hidden="true">ℹ</span><span>{children}</span>
+    </div>
+  )
 }
 
 function Select({ label, players, value, onChange, t, sel }) {

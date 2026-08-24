@@ -121,7 +121,7 @@ function ScorecardTable({ t, th, td, tdn, title, type, stats }) {
             {type === 'bat' ? (
               <><th style={{ ...th, textAlign: 'left', width: '36%' }}>NAME</th><th style={{ ...th, textAlign: 'right', width: '10%' }}>R</th><th style={{ ...th, textAlign: 'right', width: '10%' }}>B</th><th style={{ ...th, textAlign: 'right', width: '10%' }}>4s</th><th style={{ ...th, textAlign: 'right', width: '10%' }}>6s</th><th style={{ ...th, textAlign: 'right', width: '14%' }}>SR</th></>
             ) : (
-              <><th style={{ ...th, textAlign: 'left', width: '36%' }}>NAME</th><th style={{ ...th, textAlign: 'right', width: '14%' }}>O</th><th style={{ ...th, textAlign: 'right', width: '14%' }}>R</th><th style={{ ...th, textAlign: 'right', width: '14%' }}>W</th><th style={{ ...th, textAlign: 'right', width: '18%' }}>ECO</th></>
+              <><th style={{ ...th, textAlign: 'left', width: '32%' }}>NAME</th><th style={{ ...th, textAlign: 'right', width: '12%' }}>O</th><th style={{ ...th, textAlign: 'right', width: '12%' }}>M</th><th style={{ ...th, textAlign: 'right', width: '12%' }}>R</th><th style={{ ...th, textAlign: 'right', width: '12%' }}>W</th><th style={{ ...th, textAlign: 'right', width: '18%' }}>ECO</th></>
             )}
           </tr>
         </thead>
@@ -144,6 +144,7 @@ function ScorecardTable({ t, th, td, tdn, title, type, stats }) {
                 <>
                   <td style={{ ...td, textAlign: 'left', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</td>
                   <td style={tdn}>{ballsToOvers(bowlerBalls(s))}</td>
+                  <td style={{ ...tdn, color: (s.maidens || 0) > 0 ? t.accent : t.text, fontWeight: (s.maidens || 0) > 0 ? 600 : 400 }}>{s.maidens || 0}</td>
                   <td style={tdn}>{s.runs}</td>
                   <td style={{ ...tdn, color: s.wickets > 0 ? t.red : t.text, fontWeight: s.wickets > 0 ? 600 : 400 }}>{s.wickets}</td>
                   <td style={tdn}>{calcEconomy(s.runs, bowlerBalls(s))}</td>

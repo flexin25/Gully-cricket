@@ -12,10 +12,12 @@ export default function BowlerStats() {
   const isVC = team?.viceCaptain === currentBowler
   const roleStr = isC ? ' (c)' : isVC ? ' (vc)' : ''
 
-  const stats = bowlerStats[currentBowler] || { balls: 0, overs: 0, runs: 0, wickets: 0 }
+  const stats = bowlerStats[currentBowler] || { balls: 0, overs: 0, runs: 0, wickets: 0, maidens: 0 }
   const totalB = bowlerBalls(stats)
   const oversStr = ballsToOvers(totalB)
   const economy = calcEconomy(stats.runs, totalB)
+  // `|| 0` — matches saved before maidens existed have no such field.
+  const maidens = stats.maidens || 0
 
   const th = { color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', paddingBottom: 5, fontWeight: 500 }
   const td = { color: t.text, fontSize: 12, padding: '5px 0' }
@@ -27,11 +29,12 @@ export default function BowlerStats() {
       <div className="table-wrapper">
         <table className="sc-table" style={{ '--border': t.border }}>
           <colgroup>
-          <col style={{ width: '38%' }} /><col style={{ width: '15%' }} /><col style={{ width: '15%' }} /><col style={{ width: '15%' }} /><col style={{ width: '17%' }} />
+          <col style={{ width: '34%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} /><col style={{ width: '14%' }} />
         </colgroup>
         <thead><tr>
           <th style={{ ...th, textAlign: 'left' }}>NAME</th>
           <th style={{ ...th, textAlign: 'right' }}>O</th>
+          <th style={{ ...th, textAlign: 'right' }}>M</th>
           <th style={{ ...th, textAlign: 'right' }}>R</th>
           <th style={{ ...th, textAlign: 'right' }}>W</th>
           <th style={{ ...th, textAlign: 'right' }}>ECO</th>
@@ -43,6 +46,7 @@ export default function BowlerStats() {
               <span style={{ fontSize: 9, color: t.muted }}>{roleStr}</span>
             </td>
             <td style={tdn}>{oversStr}</td>
+            <td style={{ ...tdn, color: maidens > 0 ? t.accent : t.text, fontWeight: maidens > 0 ? 600 : 400 }}>{maidens}</td>
             <td style={tdn}>{stats.runs}</td>
             <td style={{ ...tdn, color: stats.wickets > 0 ? t.red : t.text, fontWeight: stats.wickets > 0 ? 600 : 400 }}>{stats.wickets}</td>
             <td style={tdn}>{economy}</td>
