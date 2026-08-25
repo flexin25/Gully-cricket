@@ -8,6 +8,7 @@ import ScoreButtons from '../components/ScoreButtons'
 import BatsmanStats from '../components/BatsmanStats'
 import BowlerStats from '../components/BowlerStats'
 import BreakTimer from '../components/BreakTimer'
+import SuperOverIntro from '../components/SuperOverIntro'
 
 const LAYOUT = { maxWidth: 480, margin: '0 auto', paddingLeft: 20, paddingRight: 20 }
 
@@ -18,7 +19,7 @@ export default function Match() {
     phase, needNewBatsman, needNewBowler,
     battingTeam, bowlingTeam, teamA, teamB,
     currentBatsmen, currentBowler, lastOverBowler,
-    batsmanStats,
+    batsmanStats, superOvers, newBatsmanSlot,
     setOpeningPlayers, selectNewBatsman, selectNewBowler,
     matchName,
   } = useMatchStore()
@@ -36,6 +37,12 @@ export default function Match() {
   const availableBat = battingObj.players.filter(p => !batsmanStats[p]?.out)
   const availableBowl = bowlingObj.players
 
+  // Which Super Over we're on. Only ever used for labelling; the engine derives
+  // everything it needs from `phase` and the last superOvers entry itself.
+  const inSuper = phase === 'super'
+  const superNo = superOvers?.length || 0
+  const superLabel = superNo > 1 ? `SUPER OVER ${superNo}` : 'SUPER OVER'
+
   const sel = (val) => ({
     background: t.bg, border: `1px solid ${val ? t.accent : t.border}`,
     borderRadius: 4, color: val ? t.text : t.muted,
@@ -50,17 +57,42 @@ export default function Match() {
     </div>
   )
 
+  // ── Tied — Super Over ahead ──
+  // Must come before needOpening: a wicket-ended innings leaves striker null, so
+  // needOpening would be true and the tie would render as a players screen.
+  if (phase === 'tied') return (
+    <div style={{ background: t.bg, color: t.text, minHeight: '100vh' }}>
+      <Header t={t} navigate={navigate} matchName={matchName}
+        title={superNo > 0 ? `SUPER OVER ${superNo} TIED` : 'MATCH TIED'} />
+      <SuperOverIntro />
+    </div>
+  )
+
   // ── Opening ──
-  const needOpening = !currentBatsmen.striker || !currentBatsmen.nonStriker || !currentBowler
+  // `newBatsmanSlot` is set only when a wicket has left one specific slot empty
+  // mid-innings; it's null at the start of an innings. Without that guard a
+  // wicket (which nulls the dismissed batsman) satisfies the test below, so the
+  // full three-select screen renders instead of the next-batsman list further
+  // down — re-picking both batsmen and letting the bowler be changed mid-over.
+  const needOpening = !newBatsmanSlot
+    && (!currentBatsmen.striker || !currentBatsmen.nonStriker || !currentBowler)
   if (needOpening) return (
     <div style={{ background: t.bg, color: t.text, minHeight: '100vh' }}>
-      <Header t={t} title={phase === 'innings2' ? 'INN 2 SETUP' : 'OPENING PLAYERS'} navigate={navigate} matchName={matchName} />
+      <Header t={t} navigate={navigate} matchName={matchName}
+        title={inSuper ? `${superLabel} — SELECT PLAYERS` : phase === 'innings2' ? 'INN 2 SETUP' : 'OPENING PLAYERS'} />
       <div style={{ ...LAYOUT, paddingTop: 4 }}>
+        {inSuper && <SuperBand t={t} label={superLabel} sub={`${battingObj.name} batting · ${bowlingObj.name} bowling`} />}
         <Lbl t={t}>{battingObj.name} — batsmen</Lbl>
         <Select label="striker" players={availableBat.filter(p => p !== nonStriker)} value={striker} onChange={setStriker} t={t} sel={sel} />
         <Select label="non-striker" players={availableBat.filter(p => p !== striker)} value={nonStriker} onChange={setNonStriker} t={t} sel={sel} />
         <Lbl t={t}>{bowlingObj.name} — bowler</Lbl>
         <Select label="bowler" players={availableBowl} value={bowler} onChange={setBowler} t={t} sel={sel} />
+        {inSuper && (
+          <Note t={t}>
+            Anyone in the squad can bat or bowl this over — being out or having bowled
+            in the match doesn't rule them out. One over, two wickets.
+          </Note>
+        )}
         <button id="btn-confirm-players" className="btn-t" disabled={!striker || !nonStriker || !bowler}
           onClick={() => { if (striker && nonStriker && bowler) setOpeningPlayers({ striker, nonStriker, bowler }) }}
           style={{ marginTop: 16, width: '100%', background: 'none', border: `1px solid ${t.accent}`, borderRadius: 4, color: t.accent, padding: '11px', fontSize: 13, fontWeight: 600 }}>
@@ -75,8 +107,10 @@ export default function Match() {
     const available = battingObj.players.filter(p => p !== currentBatsmen.nonStriker && !batsmanStats[p]?.out)
     return (
       <div style={{ background: t.bg, color: t.text, minHeight: '100vh' }}>
-        <Header t={t} title="WICKET — NEXT BATSMAN" navigate={navigate} matchName={matchName} />
+        <Header t={t} navigate={navigate} matchName={matchName}
+          title={inSuper ? `${superLabel} — WICKET` : 'WICKET — NEXT BATSMAN'} />
         <div style={{ ...LAYOUT, paddingTop: 4 }}>
+          {inSuper && <SuperBand t={t} label={superLabel} sub="1 down — the next wicket ends the over" />}
           <Lbl t={t}>who comes in next?</Lbl>
           {available.length === 0
             ? <div style={{ color: t.red, fontSize: 12 }}>No more batsmen</div>
@@ -142,14 +176,30 @@ export default function Match() {
   // ── Main scoring ──
   return (
     <div style={{ background: t.bg, color: t.text, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <Header t={t} title={`${battingObj.name} batting`} navigate={navigate} matchName={matchName} />
+      <Header t={t} navigate={navigate} matchName={matchName}
+        title={inSuper ? `${superLabel} · ${battingObj.name}` : `${battingObj.name} batting`} />
       <div style={{ ...LAYOUT, flex: 1, paddingTop: 10, paddingBottom: 24, overflowY: 'auto' }}>
         <Scoreboard />
-        <BreakTimer />
+        {/* No drinks break in a one-over innings. */}
+        {!inSuper && <BreakTimer />}
         <ScoreButtons />
         <BatsmanStats />
         <BowlerStats />
       </div>
+    </div>
+  )
+}
+
+/** Accent strip marking a Super Over screen, so no screen in the phase can be
+ *  mistaken for the normal innings it followed. */
+function SuperBand({ t, label, sub }) {
+  return (
+    <div style={{
+      background: t.accent + '14', border: `1px solid ${t.accent}44`, borderRadius: 5,
+      padding: '8px 12px', marginTop: 10, textAlign: 'center',
+    }}>
+      <div style={{ color: t.accent, fontSize: 12, fontWeight: 700, letterSpacing: '0.12em' }}>⚡ {label}</div>
+      {sub && <div style={{ color: t.muted, fontSize: 10, marginTop: 2 }}>{sub}</div>}
     </div>
   )
 }

@@ -29,9 +29,11 @@ export default function Home() {
           <ActionBtn t={t} accent onClick={() => { resetMatch(); navigate('/match') }} id="btn-new-match">
             ▸ New Match
           </ActionBtn>
-          {(phase === 'innings1' || phase === 'innings2') && (
+          {/* 'tied' and 'super' are mid-match too — without them a reload during
+              a Super Over leaves no way back to the scoring screen. */}
+          {['innings1', 'innings2', 'tied', 'super'].includes(phase) && (
             <ActionBtn t={t} onClick={() => navigate('/match')} id="btn-continue-match">
-              ▸ Continue Match
+              ▸ {phase === 'tied' ? 'Continue — Super Over' : phase === 'super' ? 'Continue Super Over' : 'Continue Match'}
             </ActionBtn>
           )}
           {phase === 'done' && (

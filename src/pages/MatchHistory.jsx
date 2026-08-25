@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useMatchStore from '../store/useMatchStore'
 import { useTheme } from '../store/useThemeStore'
-import { getResult, chasingMaxWickets } from '../utils/calculations'
+import { chasingMaxWickets, matchResultText, completedSuperOvers } from '../utils/calculations'
 import { downloadPDF } from '../utils/pdf'
 import Footer from '../components/Footer'
 import { Trash2, Download, ArrowLeft, CheckSquare, Square } from 'lucide-react'
@@ -47,7 +47,15 @@ export default function MatchHistory() {
                     style={{ background: 'none', border: `1px solid ${t.border}`, borderRadius: 4, color: t.muted, fontSize: 11, padding: '5px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
                     Select
                   </button>
-                  <button className="btn-t" onClick={() => { if(confirm('Clear all matches?')) clearHistory() }}
+                  <button className="btn-t" onClick={() => {
+                    const n = matchHistory.length
+                    // Names the count and warns that the loaded result goes too
+                    // — clearing now resets a finished match's state, which is
+                    // what stops it walking back into the list.
+                    const msg = `Delete all ${n} saved match${n === 1 ? '' : 'es'}? `
+                      + `This also clears the last finished result and cannot be undone.`
+                    if (confirm(msg)) clearHistory()
+                  }}
                     style={{ background: 'none', border: `1px solid ${t.red}44`, borderRadius: 4, color: t.red, fontSize: 11, padding: '5px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
                     Clear All
                   </button>
@@ -75,13 +83,8 @@ export default function MatchHistory() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {matchHistory.map((m) => {
-              const res = m.innings1 && m.innings2
-                ? getResult(
-                    { ...m.innings1, teamName: m.innings1.teamName },
-                    m.innings2,
-                    chasingMaxWickets(m),
-                  )
-                : '—'
+              const res = matchResultText(m, chasingMaxWickets(m))
+              const supers = completedSuperOvers(m)
               const isSelected = selectedMatches.includes(m.id)
               return (
                 <div key={m.id} 
@@ -134,6 +137,20 @@ export default function MatchHistory() {
                       </div>
                     )}
                   </div>
+                  {/* Super Over line — only when one was played, so a normal
+                      match's card is unchanged. */}
+                  {supers.length > 0 && (
+                    <div style={{ fontSize: 11, marginBottom: 6, paddingLeft: isSelectionMode ? 26 : 0 }}>
+                      {supers.map((so, i) => (
+                        <div key={i} style={{ color: t.muted }}>
+                          <span style={{ color: t.accent, fontWeight: 600 }}>
+                            ⚡ {supers.length > 1 ? `SO ${i + 1}` : 'SO'}:
+                          </span>{' '}
+                          {so.inn1.teamName} {so.inn1.score}/{so.inn1.wickets} v {so.inn2.teamName} {so.inn2.score}/{so.inn2.wickets}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div style={{ color: t.text, fontSize: 12, fontWeight: 600, paddingLeft: isSelectionMode ? 26 : 0 }}>{res}</div>
                 </div>
               )

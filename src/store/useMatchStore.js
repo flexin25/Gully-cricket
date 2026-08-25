@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { isLegalDelivery, lastOverWasMaiden } from '../utils/calculations'
+import { isLegalDelivery, lastOverWasMaiden, activeSuperOver, superOverInnings, superOverMaxWickets } from '../utils/calculations'
 
 const defaultBatsmanStat = () => ({ runs: 0, balls: 0, fours: 0, sixes: 0, out: false, dismissal: '', fielder: '' })
 const defaultBowlerStat = () => ({ overs: 0, balls: 0, runs: 0, wickets: 0, dotBalls: 0, maidens: 0 })
@@ -26,11 +26,27 @@ const initialState = {
   tossCall: null,       // 'heads' | 'tails' — what they called
   tossResult: null,     // 'heads' | 'tails' — what the coin landed on
 
-  // Match phase: 'setup' | 'innings1' | 'innings2' | 'done'
+  // Match phase.
+  //   'setup' → 'innings1' → 'innings2' → 'done'
+  //   'tied'  — scores level, waiting for the user to start a Super Over. Covers
+  //             both a tied normal match and a tied Super Over; the screen tells
+  //             them apart from superOvers.length.
+  //   'super' — a Super Over is being set up or scored.
   phase: 'setup',
 
-  // Innings 1 stored result
+  // Completed-innings snapshots. Innings 2 used to have none — it lived only in
+  // the live fields below and was assembled at save time — which is why the
+  // Super Over needs one: startSuperOver reuses those live fields, so without a
+  // snapshot the normal 2nd innings would be overwritten and lost.
   innings1: null,
+  innings2: null,
+
+  // One entry per Super Over played, in order:
+  //   { battingFirst: 'A'|'B', inn1: snapshot|null, inn2: snapshot|null }
+  // The live Super Over is always the last entry, and which of its innings is
+  // being scored is derived (inn1 === null → 1st, else → 2nd) so there is no
+  // index to keep in sync. A tied Super Over appends another entry.
+  superOvers: [],
 
   // Current innings
   battingTeam: 'A',
@@ -79,14 +95,16 @@ const useMatchStore = create(
       // ─── Match History (persisted in the same key as the live match state) ────
       matchHistory: [],
 
-      // Records the finished match. Innings 1 is already a stored snapshot, but
-      // innings 2 only exists in the live top-level fields, so it is assembled
-      // here — which is why this must run once the match is actually over.
+      // Records the finished match. Both innings are stored snapshots by the time
+      // the match is over; the live-field assembly below is only a fallback for a
+      // session that was persisted by an earlier build.
       saveMatchToHistory: () => {
         const s = get()
         if (!s.matchId) return
         // Nothing but a completed match belongs in history. Reaching Summary
         // mid-chase used to file an entry holding a part-played 2nd innings.
+        // A tie sits on 'tied' and an unfinished Super Over on 'super', so
+        // neither can be filed half-played either.
         if (s.phase !== 'done') return
 
         set((state) => {
@@ -99,7 +117,7 @@ const useMatchStore = create(
             totalOvers: s.totalOvers,
             powerplayOvers: s.powerplayOvers,
             innings1: s.innings1,
-            innings2: {
+            innings2: s.innings2 || {
               score: s.score,
               wickets: s.wickets,
               balls: s.totalBalls,
@@ -108,6 +126,7 @@ const useMatchStore = create(
               batsmanStats: s.batsmanStats,
               bowlerStats: s.bowlerStats,
             },
+            superOvers: s.superOvers,
             battingTeam: s.battingTeam,
             // Same field names as the live state, so tossSummary() reads either.
             tossWinner: s.tossWinner,
@@ -130,10 +149,26 @@ const useMatchStore = create(
         })
       },
 
-      deleteHistoryEntry: (id) =>
-        set((s) => ({ matchHistory: s.matchHistory.filter((m) => m.id !== id) })),
+      /**
+       * Both deleters have to clear the loaded match as well as the list entry,
+       * or the deletion doesn't stick. matchId and phase survive partialize, and
+       * Summary re-files on every mount — so with the entry gone, findIndex above
+       * misses and files it straight back in. Home's "View Last Result" makes
+       * that one tap away. A match still being scored is deliberately spared;
+       * only a finished one can be re-filed.
+       */
+      deleteHistoryEntry: (id) => {
+        set((s) => ({ matchHistory: s.matchHistory.filter((m) => m.id !== id) }))
+        const s = get()
+        if (s.matchId === id && s.phase === 'done') s.resetMatch()
+      },
 
-      clearHistory: () => set({ matchHistory: [] }),
+      clearHistory: () => {
+        set({ matchHistory: [] })
+        const s = get()
+        if (s.phase === 'done') s.resetMatch()
+      },
+
 
       // ─── Setup ───────────────────────────────────────────────────────────────
       // `toss` is the winning side ('A'|'B') and `decision` is what they chose.
@@ -170,10 +205,74 @@ const useMatchStore = create(
           currentBowler: null,
           ballsHistory: [],
           innings1: null,
+          innings2: null,
+          superOvers: [],
           needNewBatsman: false, needNewBowler: false,
           pendingWicket: null,
           breakActive: false, breakEndTime: null, breaksTaken: 0,
           isFreeHit: false,
+        })
+      },
+
+      // ─── Super Over ───────────────────────────────────────────────────────────
+      /**
+       * Begin a Super Over from the 'tied' phase. Scoring then runs through the
+       * same live fields and the same addBall as a normal innings — only the
+       * limits differ (one over, two wickets), which addBall derives from the
+       * phase. Nothing here duplicates the scoring engine.
+       *
+       * The side that batted second in the normal match bats first, which is
+       * already the current battingTeam when the tie lands, so there's no swap.
+       * For a repeat Super Over that's the previous Super Over's chasing side —
+       * the same rule applied again.
+       */
+      startSuperOver: () => {
+        const s = get()
+        if (s.phase !== 'tied') return  // guards a double tap or a stale click
+
+        const battingFirst = s.battingTeam
+        const bowlingFirst = battingFirst === 'A' ? 'B' : 'A'
+        const battingTeamObj = battingFirst === 'A' ? s.teamA : s.teamB
+
+        // The normal 2nd innings normally gets snapshotted by the ball that ends
+        // it, but a session persisted by an earlier build won't have one — and
+        // the lines below overwrite the live fields it lives in. Belt and braces.
+        const innings2 = s.innings2 || {
+          score: s.score, wickets: s.wickets, balls: s.totalBalls,
+          teamName: battingTeamObj.name,
+          extras: s.extras, batsmanStats: s.batsmanStats, bowlerStats: s.bowlerStats,
+        }
+
+        // Fresh cards for the batting side only. This is what delivers "any
+        // playing member may bat": nobody is marked out, so the picker offers
+        // the whole squad even to players dismissed in the normal match.
+        const soBatsmanStats = {}
+        battingTeamObj.players.forEach((p) => { soBatsmanStats[p] = defaultBatsmanStat() })
+
+        set({
+          innings2,
+          superOvers: [...s.superOvers, { battingFirst, inn1: null, inn2: null }],
+          phase: 'super',
+          battingTeam: battingFirst,
+          bowlingTeam: bowlingFirst,
+          score: 0, wickets: 0, balls: 0, totalBalls: 0,
+          extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
+          currentBatsmen: { striker: null, nonStriker: null },
+          currentBowler: null,
+          batsmanStats: soBatsmanStats,
+          bowlerStats: {},
+          ballsHistory: [],
+          needNewBatsman: false, needNewBowler: false,
+          newBatsmanSlot: null,
+          // null, so the bowler who bowled the last over of the normal match is
+          // eligible — the no-consecutive-overs rule doesn't cross the phase.
+          lastOverBowler: null,
+          breaksTaken: 0,
+          isFreeHit: false,
+          pendingWicket: null,
+          // Emptied so undo can't roll back out of the Super Over into the
+          // finished normal match and un-tie it.
+          undoStack: [],
         })
       },
 
@@ -248,7 +347,7 @@ const useMatchStore = create(
           score, wickets, balls, totalBalls, totalOvers,
           currentBatsmen, currentBowler, batsmanStats, bowlerStats,
           extras, ballsHistory, phase, battingTeam, bowlingTeam,
-          teamA, teamB, innings1, lastOverBowler,
+          teamA, teamB, innings1, lastOverBowler, superOvers,
         } = state
 
         // Free hit: only a run out can dismiss the batsman — ignore any other wicket.
@@ -258,11 +357,16 @@ const useMatchStore = create(
           dismissal = ''
         }
 
-        // Snapshot pre-ball state so undoBall can restore it exactly (survives an innings switch).
+        // Snapshot pre-ball state so undoBall can restore it exactly (survives an
+        // innings switch, and a Super Over innings switch). innings2/superOvers
+        // are in here because the ball that ends an innings writes them —
+        // rolling that ball back has to un-write them too.
         const snapshot = {
           score, wickets, balls, totalBalls, extras,
           batsmanStats, bowlerStats, currentBatsmen, currentBowler, lastOverBowler,
           ballsHistory, phase, battingTeam, bowlingTeam, innings1,
+          innings2: state.innings2,
+          superOvers: state.superOvers,
           isFreeHit: state.isFreeHit,
           needNewBatsman: state.needNewBatsman,
           needNewBowler: state.needNewBowler,
@@ -351,48 +455,80 @@ const useMatchStore = create(
         }
 
         const battingTeamObj = battingTeam === 'A' ? teamA : teamB
-        const maxWickets = Math.max(1, battingTeamObj.players.length - 1)
+
+        // A Super Over is scored through these same live fields and this same
+        // engine — only the two innings limits differ. Which Super Over innings
+        // is live is derived from the last entry rather than tracked separately.
+        const inSuper = phase === 'super'
+        const so = inSuper ? activeSuperOver(state) : null
+        const soInn = superOverInnings(so)
+
+        const maxWickets = inSuper
+          ? superOverMaxWickets(battingTeamObj)
+          : Math.max(1, battingTeamObj.players.length - 1)
+        const oversLimit = inSuper ? 1 : totalOvers
         const allOut = isWicket && (wickets + 1) >= maxWickets
-        const oversUp = isEndOfOver && (Math.floor(newTotalBalls / 6) >= totalOvers)
+        const oversUp = isEndOfOver && (Math.floor(newTotalBalls / 6) >= oversLimit)
         const inningsOver = allOut || oversUp
 
         let newIsFreeHit = state.isFreeHit
         if (extraType === 'noBall') newIsFreeHit = true
         else if (extraType !== 'wide') newIsFreeHit = false
-        const chasing = phase === 'innings2'
-        const target = innings1 ? innings1.score + 1 : null
+        const chasing = phase === 'innings2' || soInn === 2
+        const target = soInn === 2
+          ? so.inn1.score + 1
+          : (innings1 ? innings1.score + 1 : null)
         const chasersWon = chasing && newScore >= (target || Infinity)
 
+        // The live innings, frozen. Same shape as the innings1 snapshot below,
+        // plus ballsHistory for Super Overs — a one-over innings is small and
+        // its ball-by-ball IS the scorecard.
+        const snapInnings = (withHistory = false) => ({
+          score: newScore,
+          wickets: isWicket ? wickets + 1 : wickets,
+          balls: newTotalBalls,
+          teamName: battingTeamObj.name,
+          extras: newExtras,
+          batsmanStats: newBatsmanStats,
+          bowlerStats: newBowlerStats,
+          ...(withHistory ? { ballsHistory: newHistory } : {}),
+        })
+
+        /** Fields common to every "this ball ended things" set(). */
+        const closingBall = () => ({
+          score: newScore,
+          wickets: isWicket ? wickets + 1 : wickets,
+          balls: isEndOfOver ? 0 : newBalls,
+          totalBalls: newTotalBalls,
+          extras: newExtras,
+          batsmanStats: newBatsmanStats,
+          bowlerStats: newBowlerStats,
+          currentBatsmen: updatedBatsmen,
+          ballsHistory: newHistory,
+          needNewBatsman: false, needNewBowler: false,
+          isFreeHit: newIsFreeHit,
+          undoStack: newUndoStack,
+        })
+
+        /** Replace the live Super Over's innings-1 or innings-2 slot. */
+        const withSuperInnings = (key) => {
+          const next = [...superOvers]
+          next[next.length - 1] = { ...so, [key]: snapInnings(true) }
+          return next
+        }
+
         if (chasersWon) {
-          set({
-            score: newScore,
-            wickets: isWicket ? wickets + 1 : wickets,
-            balls: isEndOfOver ? 0 : newBalls,
-            totalBalls: newTotalBalls,
-            extras: newExtras,
-            batsmanStats: newBatsmanStats,
-            bowlerStats: newBowlerStats,
-            currentBatsmen: updatedBatsmen,
-            ballsHistory: newHistory,
-            phase: 'done',
-            needNewBatsman: false, needNewBowler: false,
-            isFreeHit: newIsFreeHit,
-            undoStack: newUndoStack,
-          })
+          if (inSuper) {
+            // Target passed inside the Super Over — decided, no need to finish it.
+            set({ ...closingBall(), superOvers: withSuperInnings('inn2'), phase: 'done' })
+            return
+          }
+          set({ ...closingBall(), innings2: snapInnings(), phase: 'done' })
           return
         }
 
         if (inningsOver) {
           if (phase === 'innings1') {
-            const inn1 = {
-              score: newScore,
-              wickets: isWicket ? wickets + 1 : wickets,
-              balls: newTotalBalls,
-              teamName: battingTeamObj.name,
-              extras: newExtras,
-              batsmanStats: newBatsmanStats,
-              bowlerStats: newBowlerStats,
-            }
             const newBattingTeam = bowlingTeam
             const newBowlingTeam = battingTeam
             const inn2BatsmanStats = {}
@@ -400,7 +536,7 @@ const useMatchStore = create(
             inn2Team.players.forEach((p) => { inn2BatsmanStats[p] = defaultBatsmanStat() })
 
             set({
-              innings1: inn1,
+              innings1: snapInnings(),
               phase: 'innings2',
               battingTeam: newBattingTeam,
               bowlingTeam: newBowlingTeam,
@@ -419,21 +555,53 @@ const useMatchStore = create(
               isFreeHit: false,
               undoStack: newUndoStack,
             })
-          } else {
+          } else if (inSuper && soInn === 1) {
+            // First half of the Super Over done — hand over exactly the way the
+            // normal innings break does, so the existing setup screen picks up
+            // the other side's batters and bowler.
+            const newBattingTeam = bowlingTeam
+            const newBowlingTeam = battingTeam
+            const soBatsmanStats = {}
+            const soTeam = newBattingTeam === 'A' ? teamA : teamB
+            soTeam.players.forEach((p) => { soBatsmanStats[p] = defaultBatsmanStat() })
+
             set({
-              score: newScore,
-              wickets: isWicket ? wickets + 1 : wickets,
-              balls: isEndOfOver ? 0 : newBalls,
-              totalBalls: newTotalBalls,
-              extras: newExtras,
-              batsmanStats: newBatsmanStats,
-              bowlerStats: newBowlerStats,
-              currentBatsmen: updatedBatsmen,
-              ballsHistory: newHistory,
-              phase: 'done',
-              needNewBatsman: false, needNewBowler: false,
-              isFreeHit: newIsFreeHit,
+              superOvers: withSuperInnings('inn1'),
+              phase: 'super',
+              battingTeam: newBattingTeam,
+              bowlingTeam: newBowlingTeam,
+              score: 0, wickets: 0, balls: 0, totalBalls: 0,
+              extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0 },
+              currentBatsmen: { striker: null, nonStriker: null },
+              currentBowler: null,
+              batsmanStats: soBatsmanStats,
+              bowlerStats: {},
+              ballsHistory: [],
+              needNewBatsman: true,
+              needNewBowler: true,
+              newBatsmanSlot: null,
+              lastOverBowler: null,
+              breaksTaken: 0,
+              isFreeHit: false,
               undoStack: newUndoStack,
+            })
+          } else if (inSuper) {
+            // Second half done, and the target wasn't passed (chasersWon caught
+            // that above) — so it's a Super Over win for the side batting first,
+            // or level, which earns another Super Over.
+            set({
+              ...closingBall(),
+              superOvers: withSuperInnings('inn2'),
+              phase: newScore === so.inn1.score ? 'tied' : 'done',
+            })
+          } else {
+            // End of the normal 2nd innings. A tie can only surface here:
+            // chasersWon needs innings1.score + 1, and both all-out and overs-up
+            // funnel through this one branch.
+            set({
+              ...closingBall(),
+              innings2: snapInnings(),
+              phase: innings1 && newScore === innings1.score ? 'tied' : 'done',
             })
           }
           return

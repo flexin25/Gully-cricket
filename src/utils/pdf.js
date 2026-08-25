@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { ballsToOvers, calcSR, calcEconomy, getResult, bowlerBalls, chasingMaxWickets, tossSummary } from './calculations'
+import { ballsToOvers, calcSR, calcEconomy, matchResultText, bowlerBalls, chasingMaxWickets, completedSuperOvers, tossSummary } from './calculations'
 
 const NAVY = [17, 24, 39]
 
@@ -51,10 +51,13 @@ export function downloadPDF(match) {
   y += 18
 
   // ── Result ────────────────────────────────────────────────────────────────
+  // matchResultText names the Super Over winner when there was one and falls
+  // back to getResult otherwise, so a normal match prints exactly as before.
   const inn1 = match.innings1
   const inn2 = match.innings2
+  const supers = completedSuperOvers(match)
   if (inn1 && inn2) {
-    const res = getResult({ ...inn1 }, { ...inn2 }, chasingMaxWickets(match))
+    const res = matchResultText(match, chasingMaxWickets(match))
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.setTextColor(20)
@@ -85,6 +88,10 @@ export function downloadPDF(match) {
       startY: y + 8,
       margin: { left: margin, right: margin },
       theme: 'grid',
+      // Batter cells are two lines (name + dismissal); autoTable's default would
+      // happily break between them, stranding "not out" at the top of the next
+      // page under a repeated header. Keep each row whole.
+      rowPageBreak: 'avoid',
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 4, valign: 'middle', textColor: 30, lineColor: [220, 220, 220] },
       headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold', halign: 'center' },
       bodyStyles: { halign: 'center' },
@@ -113,6 +120,18 @@ export function downloadPDF(match) {
     drawTable(battingHead, battingRows(inn2.batsmanStats))
     drawTable(bowlingHead, bowlingRows(inn2.bowlerStats))
   }
+
+  // ── Super Overs ───────────────────────────────────────────────────────────
+  // Appended after both regulation innings, one section per half, using the
+  // same section/table helpers — which already paginate.
+  supers.forEach((so, i) => {
+    const label = supers.length > 1 ? `Super Over ${i + 1}` : 'Super Over'
+    ;[so.inn1, so.inn2].forEach((inn, half) => {
+      drawSection(`${label} — ${inn.teamName} (${half === 0 ? '1st' : '2nd'})   ${inn.score}/${inn.wickets}  (${inn.balls} ball${inn.balls === 1 ? '' : 's'})`)
+      drawTable(battingHead, battingRows(inn.batsmanStats))
+      drawTable(bowlingHead, bowlingRows(inn.bowlerStats))
+    })
+  })
 
   // ── Footer ────────────────────────────────────────────────────────────────
   y = (doc.lastAutoTable?.finalY || y) + 26

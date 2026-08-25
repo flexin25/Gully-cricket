@@ -2,9 +2,13 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useMatchStore from '../store/useMatchStore'
 import { useTheme } from '../store/useThemeStore'
-import { ballsToOvers, calcSR, calcEconomy, getResult, bowlerBalls, tossSummary } from '../utils/calculations'
+import {
+  ballsToOvers, matchResultText, chasingMaxWickets, completedSuperOvers, tossSummary,
+} from '../utils/calculations'
 import { downloadPDF } from '../utils/pdf'
 import Footer from '../components/Footer'
+import ScorecardTable from '../components/ScorecardTable'
+import SuperOverCard from '../components/SuperOverCard'
 import { Download } from 'lucide-react'
 
 const LAYOUT = { maxWidth: 560, margin: '0 auto', padding: '0 20px 80px' }
@@ -13,24 +17,41 @@ export default function Summary() {
   const t = useTheme()
   const navigate = useNavigate()
   const {
-    teamA, teamB, innings1,
-    score: inn2Score, wickets: inn2Wickets, totalBalls: inn2Balls,
+    phase, teamA, teamB, innings1, innings2, superOvers,
+    score: liveScore, wickets: liveWickets, totalBalls: liveBalls,
     battingTeam, matchName, totalOvers, powerplayOvers, extras,
-    batsmanStats: inn2Bat, bowlerStats: inn2Bowl,
+    batsmanStats: liveBat, bowlerStats: liveBowl,
     resetMatch, saveMatchToHistory,
     matchId, matchHistory,
     tossWinner, tossDecision, tossMethod, tossCaller, tossCall, tossResult,
   } = useMatchStore()
 
-  const inn2Team = battingTeam === 'A' ? teamA : teamB
-  const inn1Team = battingTeam === 'A' ? teamB : teamA
   const tossLine = tossSummary({ teamA, teamB, tossWinner, tossDecision, tossMethod, tossCall })
 
-  const inn2 = { score: inn2Score, wickets: inn2Wickets, balls: inn2Balls, teamName: inn2Team.name, batsmanStats: inn2Bat, bowlerStats: inn2Bowl }
-  const inn1 = innings1 ? { ...innings1, teamName: inn1Team.name } : null
+  // Both innings come from their snapshots. The live-field assembly is only a
+  // fallback for a session persisted before innings 2 was snapshotted — and
+  // after a Super Over the live fields hold the Super Over, not the 2nd innings,
+  // so reading them directly would mislabel everything downstream.
+  const inn1 = innings1 || null
+  const inn2 = innings2 || {
+    score: liveScore, wickets: liveWickets, balls: liveBalls,
+    teamName: (battingTeam === 'A' ? teamA : teamB).name,
+    extras, batsmanStats: liveBat, bowlerStats: liveBowl,
+  }
 
-  const maxWicketsChasing = inn2Team.players?.length ? Math.max(1, inn2Team.players.length - 1) : 10
-  const resultText = inn1 && inn2 ? getResult(inn1, inn2, maxWicketsChasing) : '—'
+  const played = completedSuperOvers({ superOvers })
+  const resultText = matchResultText(
+    { teamA, teamB, innings1: inn1, innings2: inn2, superOvers },
+    chasingMaxWickets({ teamA, teamB, innings2: inn2 }),
+  )
+
+  // Level regulation scores are not a result while a Super Over is pending or
+  // half-played (§1, §6). Nothing links here in those phases, but a stale tab or
+  // a reload on this URL can still land on it — so the page must say the match
+  // is unfinished and point back at the Super Over instead of printing a winner
+  // or a tie as final. The download is held back for the same reason: its
+  // result line would be that same wrong verdict, on paper.
+  const undecided = phase === 'tied' || phase === 'super'
 
   // Auto-save to history on mount
   useEffect(() => {
@@ -52,15 +73,12 @@ export default function Summary() {
       date: saved?.date || new Date().toISOString(),
       teamA, teamB, totalOvers, powerplayOvers,
       innings1: inn1,
-      innings2: { ...inn2, extras },
+      innings2: inn2,
+      superOvers,
       battingTeam,
       tossWinner, tossDecision, tossMethod, tossCaller, tossCall, tossResult,
     })
   }
-
-  const th = { color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', paddingBottom: 5, fontWeight: 500 }
-  const td = { color: t.text, fontSize: 12, padding: '5px 0' }
-  const tdn = { ...td, textAlign: 'right' }
 
   return (
     <div className="page-anim" style={{ background: t.bg, color: t.text, minHeight: '100vh', paddingTop: 60 }}>
@@ -78,31 +96,85 @@ export default function Summary() {
 
         {/* Result */}
         <div className="sc-card" style={{ borderColor: t.accent + '44', background: t.accent + '08', textAlign: 'center' }}>
-          <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>RESULT</div>
-          <div style={{ color: t.accent, fontSize: 16, fontWeight: 700 }}>▸ {resultText}</div>
+          <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
+            {undecided
+              ? (phase === 'super' ? 'SUPER OVER IN PROGRESS' : 'MATCH TIED — SUPER OVER TO COME')
+              : played.length ? 'RESULT — DECIDED BY SUPER OVER' : 'RESULT'}
+          </div>
+          <div style={{ color: t.accent, fontSize: 16, fontWeight: 700 }}>
+            ▸ {undecided ? 'No result yet' : resultText}
+          </div>
+          {undecided && (
+            <button className="btn-t" onClick={() => navigate('/match')}
+              style={{ marginTop: 10, background: 'none', border: `1px solid ${t.accent}`, borderRadius: 4, color: t.accent, padding: '9px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {phase === 'super' ? 'BACK TO SUPER OVER →' : 'GO TO SUPER OVER →'}
+            </button>
+          )}
+          {/* How it got there: the regulation match was level. */}
+          {played.length > 0 && inn1 && (
+            <div style={{ color: t.text, fontSize: 11, marginTop: 6 }}>
+              Match tied at {inn1.score} — {played.length > 1 ? `${played.length} Super Overs played` : 'settled in the Super Over'}
+            </div>
+          )}
           {tossLine && <div style={{ color: t.muted, fontSize: 11, marginTop: 6 }}>{tossLine}</div>}
         </div>
+
+        {/* Super Over score strip — the headline numbers, above the regulation
+            innings so the deciding contest reads first (§6, §8). */}
+        {played.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            {played.map((so, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                border: `1px solid ${t.accent}44`, background: t.accent + '0a',
+                borderRadius: 6, padding: '9px 12px', marginBottom: 6,
+              }}>
+                <span style={{ color: t.accent, fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>
+                  ⚡ {played.length > 1 ? `SUPER OVER ${i + 1}` : 'SUPER OVER'}
+                </span>
+                <span style={{ color: t.text, fontSize: 12, textAlign: 'right' }}>
+                  {so.inn1.teamName} <b style={{ color: t.accent }}>{so.inn1.score}/{so.inn1.wickets}</b>
+                  <span style={{ color: t.muted }}> v </span>
+                  {so.inn2.teamName} <b style={{ color: t.accent }}>{so.inn2.score}/{so.inn2.wickets}</b>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Innings side by side */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
           {[
-            { label: '1st Inn', team: inn1Team.name, score: inn1?.score ?? 0, wkts: inn1?.wickets ?? 0, balls: inn1?.balls ?? 0 },
-            { label: '2nd Inn', team: inn2Team.name, score: inn2.score, wkts: inn2.wickets, balls: inn2.balls },
+            { label: '1st Inn', team: inn1?.teamName, score: inn1?.score ?? 0, wkts: inn1?.wickets ?? 0, balls: inn1?.balls ?? 0 },
+            { label: '2nd Inn', team: inn2.teamName, score: inn2.score, wkts: inn2.wickets, balls: inn2.balls },
           ].map(({ label, team, score, wkts, balls }, i) => (
             <div key={i} className="sc-card" style={{ borderColor: t.border, background: t.card, textAlign: 'center' }}>
               <div style={{ color: t.muted, fontSize: 10, marginBottom: 2 }}>{label}</div>
-              <div style={{ color: t.muted, fontSize: 11 }}>{team}</div>
+              <div style={{ color: t.muted, fontSize: 11 }}>{team || '—'}</div>
               <div style={{ color: t.accent, fontSize: 22, fontWeight: 700, lineHeight: 1, marginTop: 4 }}>{score}/{wkts}</div>
               <div style={{ color: t.muted, fontSize: 11, marginTop: 2 }}>{ballsToOvers(balls)} ov</div>
             </div>
           ))}
         </div>
 
-        {/* Full scorecards */}
-        {inn1?.batsmanStats && <ScorecardTable t={t} th={th} td={td} tdn={tdn} title={`${inn1Team.name} — Batting`} type="bat" stats={inn1.batsmanStats} />}
-        {inn1?.bowlerStats && <ScorecardTable t={t} th={th} td={td} tdn={tdn} title={`${inn2Team.name} — Bowling (Inn 1)`} type="bowl" stats={inn1.bowlerStats} />}
-        {inn2.batsmanStats && <ScorecardTable t={t} th={th} td={td} tdn={tdn} title={`${inn2Team.name} — Batting`} type="bat" stats={inn2.batsmanStats} />}
-        {inn2.bowlerStats && <ScorecardTable t={t} th={th} td={td} tdn={tdn} title={`${inn1Team.name} — Bowling (Inn 2)`} type="bowl" stats={inn2.bowlerStats} />}
+        {/* Full scorecards — the regulation innings, unchanged whether or not a
+            Super Over followed. The Super Over's own card comes after. */}
+        {inn1?.batsmanStats && <ScorecardTable title={`${inn1.teamName} — Batting`} type="bat" stats={inn1.batsmanStats} />}
+        {inn1?.bowlerStats && <ScorecardTable title={`${inn2.teamName} — Bowling (Inn 1)`} type="bowl" stats={inn1.bowlerStats} />}
+        {inn2.batsmanStats && <ScorecardTable title={`${inn2.teamName} — Batting`} type="bat" stats={inn2.batsmanStats} />}
+        {inn2.bowlerStats && <ScorecardTable title={`${inn1?.teamName || 'Opposition'} — Bowling (Inn 2)`} type="bowl" stats={inn2.bowlerStats} />}
+
+        {/* Super Over scorecards — separate from the above by design (§5) */}
+        {played.length > 0 && (
+          <>
+            <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '18px 0 8px' }}>
+              ▸ Super Over Scorecard{played.length > 1 ? 's' : ''}
+            </div>
+            {played.map((so, i) => (
+              <SuperOverCard key={i} superOver={so} index={i} total={played.length} />
+            ))}
+          </>
+        )}
 
         {/* Actions */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 16 }}>
@@ -115,64 +187,13 @@ export default function Summary() {
             New Match →
           </button>
         </div>
-        <button className="btn-t" onClick={handleDownload}
-          style={{ width: '100%', background: t.card, border: `1px solid ${t.border}`, borderRadius: 4, color: t.muted, padding: '10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}>
+        <button className="btn-t" onClick={handleDownload} disabled={undecided}
+          title={undecided ? 'Available once the Super Over decides the match' : undefined}
+          style={{ width: '100%', background: t.card, border: `1px solid ${t.border}`, borderRadius: 4, color: t.muted, padding: '10px', fontSize: 12, cursor: undecided ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8, opacity: undecided ? 0.5 : 1 }}>
           <Download size={14} /> Download Scorecard
         </button>
       </div>
       <Footer />
-    </div>
-  )
-}
-
-function ScorecardTable({ t, th, td, tdn, title, type, stats }) {
-  const entries = Object.entries(stats).filter(([, v]) => type === 'bat' ? v.balls > 0 || v.runs > 0 : (v.balls > 0 || v.overs > 0))
-  if (!entries.length) return null
-
-  return (
-    <div className="sc-card" style={{ borderColor: t.border, background: t.card, marginBottom: 10 }}>
-      <div style={{ color: t.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{title}</div>
-      <div className="table-wrapper">
-        <table className="sc-table" style={{ '--border': t.border }}>
-          <thead>
-          <tr>
-            {type === 'bat' ? (
-              <><th style={{ ...th, textAlign: 'left', width: '36%' }}>NAME</th><th style={{ ...th, textAlign: 'right', width: '10%' }}>R</th><th style={{ ...th, textAlign: 'right', width: '10%' }}>B</th><th style={{ ...th, textAlign: 'right', width: '10%' }}>4s</th><th style={{ ...th, textAlign: 'right', width: '10%' }}>6s</th><th style={{ ...th, textAlign: 'right', width: '14%' }}>SR</th></>
-            ) : (
-              <><th style={{ ...th, textAlign: 'left', width: '32%' }}>NAME</th><th style={{ ...th, textAlign: 'right', width: '12%' }}>O</th><th style={{ ...th, textAlign: 'right', width: '12%' }}>M</th><th style={{ ...th, textAlign: 'right', width: '12%' }}>R</th><th style={{ ...th, textAlign: 'right', width: '12%' }}>W</th><th style={{ ...th, textAlign: 'right', width: '18%' }}>ECO</th></>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map(([name, s]) => (
-            <tr key={name} style={{ borderTop: `1px solid ${t.border}` }}>
-              {type === 'bat' ? (
-                <>
-                  <td style={{ ...td, textAlign: 'left', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {name}
-                    {s.out && s.dismissal && <span style={{ display: 'block', color: t.muted, fontSize: 10 }}>{s.dismissal}</span>}
-                  </td>
-                  <td style={{ ...tdn, color: t.accent, fontWeight: 600 }}>{s.runs}</td>
-                  <td style={tdn}>{s.balls}</td>
-                  <td style={tdn}>{s.fours}</td>
-                  <td style={tdn}>{s.sixes}</td>
-                  <td style={tdn}>{calcSR(s.runs, s.balls)}</td>
-                </>
-              ) : (
-                <>
-                  <td style={{ ...td, textAlign: 'left', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</td>
-                  <td style={tdn}>{ballsToOvers(bowlerBalls(s))}</td>
-                  <td style={{ ...tdn, color: (s.maidens || 0) > 0 ? t.accent : t.text, fontWeight: (s.maidens || 0) > 0 ? 600 : 400 }}>{s.maidens || 0}</td>
-                  <td style={tdn}>{s.runs}</td>
-                  <td style={{ ...tdn, color: s.wickets > 0 ? t.red : t.text, fontWeight: s.wickets > 0 ? 600 : 400 }}>{s.wickets}</td>
-                  <td style={tdn}>{calcEconomy(s.runs, bowlerBalls(s))}</td>
-                </>
-              )}
-            </tr>
-          ))}
-        </tbody>
-        </table>
-      </div>
     </div>
   )
 }
